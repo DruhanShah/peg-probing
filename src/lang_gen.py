@@ -61,7 +61,7 @@ def verify(sample, grammar):
         grammar.parse(sample)
         return True
     except IncompleteParseError:
-        return True
+        return False
     except ParseError:
         return False
 
@@ -70,13 +70,15 @@ def generate_random(samples, lang):
     alphabet = ALPHA[lang]
     final = 0
     with open(f"../data/{lang}.txt", "w") as f:
-        for i in tqdm(range(samples)):
-            n = random.randint(1, MAX_LENGTH)
-            s = "".join(random.choice(alphabet) for _ in range(n))
-            ans = "1" if verify(s, GRAMMAR[lang]) else "0"
-            final += int(ans)
-            print(s + " " + ans, file=f)
-    print(f"Finished {lang} with success rate {final/samples * 100}%")
+        with tqdm(total=samples) as progress:
+            while final < samples:
+                n = random.randint(1, MAX_LENGTH)
+                s = "".join(random.choice(alphabet) for _ in range(n))
+                if verify(s, GRAMMAR[lang]):
+                    progress.update(1)
+                    final += 1
+                    print(s, file=f)
+    print(f"Finished {lang}")
 
 
 if __name__ == "__main__":
