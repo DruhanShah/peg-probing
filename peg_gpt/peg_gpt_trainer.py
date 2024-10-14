@@ -28,7 +28,7 @@ def peggpt_train(lang, work_dir):
     dataset = get_data(lang, work_dir)
 
     model_config = {
-        "n_layers": 4,
+        "n_layers": 2,
         "d_head": 32,
         "d_model": 128,
         "d_vocab": len(dataset.alpha),
@@ -36,14 +36,15 @@ def peggpt_train(lang, work_dir):
         "n_heads": 4,
         "d_mlp": 512,
         "act_fn": "gelu",
+        "device": DEVICE,
     }
     training_config = {
-        "num_epochs": 1,
-        "batch_size": 16,
-        "lr": 0.0001,
-        "optimizer_name": "AdamW",
-        "save_dir": "{save_dir}/models/",
+        "num_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.0005,
+        "optimizer_name": "Adam",
         "print_every": 10000,
+        "save_dir": f"{work_dir}/models/",
         "device": DEVICE,
     }
 
@@ -54,59 +55,37 @@ def peggpt_train(lang, work_dir):
     torch.manual_seed(config.seed)
     model.train()
 
-    if config.device is None:
-        config.device = utils.get_device()
-
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=config.lr,
-    )
-
-    scheduler = None
-    if config.warmup_steps > 0:
-        scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optimizer,
-            lr_lambda=lambda step: min(1.0, step / config.warmup_steps),
-        )
-
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
 
     model.to(config.device)
 
-    for epoch in tqdm(range(1, config.num_epochs + 1)):
+    losses = []
+    for epoch in range(config.num_epochs):
+        epoch_loss = 0
         samples = 0
+        
         for step, tokens in tqdm(enumerate(dataloader)):
             loss = model(tokens, return_type="loss")
             loss.backward()
-            if config.max_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
             optimizer.step()
-            if config.warmup_steps > 0:
-                assert scheduler is not None
-                scheduler.step()
             optimizer.zero_grad()
-
+            epoch_loss += loss.item()
             samples += tokens.shape[0]
 
-            if config.wandb:
-                wandb.log({"train_loss": loss.item(), "samples": samples, "epoch": epoch})
-
             if config.print_every is not None and step % config.print_every == 0 and step > 0:
-                print(f"Epoch {epoch} Samples {samples} Step {step} Loss {loss.item()}")
-
-            if (
-                config.save_every is not None
-                and step % config.save_every == 0
-                and config.save_dir is not None
-            ):
-                torch.save(model.state_dict(), f"{config.save_dir}/{lang}_model_{step}.pt")
-
+                print()
+                print(f"Epoch {epoch+1} Samples {samples} Step {step} Loss {loss.item()}")
             if config.max_steps is not None and step >= config.max_steps:
                 break
+            
+        epoch_loss /= len(dataloader)
+        losses.append(epoch_loss)
+        print(f"Epoch {epoch+1} Loss {epoch_loss}")
+        torch.save(model.state_dict(), f"{config.save_dir}/{lang}_model_{epoch}.pt")
 
     return model
     
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

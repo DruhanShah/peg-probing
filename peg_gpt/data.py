@@ -66,11 +66,11 @@ class LangDataset(Dataset):
     def __init__(self, lang, samples):
         self.samples = samples
         self.grammar = GRAMMAR[lang]
-        self.alpha = ALPHA[lang]
+        self.alpha = list(ALPHA[lang]) + ["<bos>", "<eos>"]
         self.stoi = {c: i for i, c in enumerate(self.alpha)}
 
     def __getitem__(self, index):
-        s = self.samples[index]
+        s = ["<bos>"] + list(self.samples[index]) + ["<eos>"]
         tense = [self.stoi[c] for c in s]
         return torch.tensor(tense, dtype=torch.long)
 

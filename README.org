@@ -1,4 +1,3 @@
-#+title: Parse Probing in PEGs
 #+author: Druhan Shah, Abhinav S Menon and Manish Shrivastava
 
 * PEGs and DL Interpretability
