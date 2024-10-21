@@ -35,7 +35,7 @@ def peggpt_train(lang, work_dir):
         "n_ctx": 64,
         "n_heads": 4,
         "d_mlp": 512,
-        "act_fn": "gelu",
+        "act_fn": "relu",
         "device": DEVICE,
     }
     training_config = {
