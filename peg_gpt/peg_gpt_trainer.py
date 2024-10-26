@@ -1,14 +1,11 @@
 import argparse, sys
-from transformer_lens import (
-    HookedTransformer,
-    HookedTransformerConfig,
-    train,
-    utils
-)
+import json
 from data import LangDataset
+from transformer import Transformer, TransformerConfig
 import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+import wandb
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -23,68 +20,48 @@ def get_data(lang, work_dir):
     return dataset
 
 
-def peggpt_train(lang, work_dir):
-    print("Loading dataset")
-    dataset = get_data(lang, work_dir)
+class Trainer:
 
-    model_config = {
-        "n_layers": 2,
-        "d_head": 32,
-        "d_model": 128,
-        "d_vocab": len(dataset.alpha),
-        "n_ctx": 64,
-        "n_heads": 4,
-        "d_mlp": 512,
-        "act_fn": "relu",
-        "device": DEVICE,
-    }
-    training_config = {
-        "num_epochs": 5,
-        "batch_size": 32,
-        "lr": 0.0005,
-        "optimizer_name": "Adam",
-        "print_every": 10000,
-        "save_dir": f"{work_dir}/models/",
-        "device": DEVICE,
-    }
+    def __init__(self, model, config, loss_fn, dataset, lang):
+        self.lang = lang
+        self.model = model
+        self.config = config
+        self.loss_fn = loss_fn
+        self.optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
+        self.dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=True)
+        if self.config["wandb"]:
+            wandb.init(project=self.config["wandb_project"])
 
-    model = HookedTransformer(HookedTransformerConfig(**model_config))
-    config = train.HookedTransformerTrainConfig(**training_config)
+    def train(self):
+        torch.manual_seed(self.config["seed"])
+        self.model.train()
+        self.model.to(self.config["device"])
 
-    print("Training")
-    torch.manual_seed(config.seed)
-    model.train()
+        for epoch in range(self.config["epochs"]):
+            epoch_loss = 0
+            for step, tokens in tqdm(enumerate(self.dataloader)):
+                x, y = tokens[:, :-1], tokens[:, 1:]
+                y_pred = self.model(x, y)
+                loss = self.loss_fn(y_pred.view(-1, self.config["t_vocab"]), y.reshape(-1))
+                loss.backward()
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+                epoch_loss += (loss.item() - epoch_loss)/(step+1)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
-    dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
+                if step % self.config["pe"] == 0 and step > 0:
+                    if self.config["wandb"]:
+                        wandb.log({"loss": epoch_loss})
+                    else:
+                        print()
+                        print(f"Epoch {epoch+1} Step {step} Loss {loss.item()}")
 
-    model.to(config.device)
+            print(f"Epoch {epoch+1} Loss {epoch_loss}")
+            torch.save(
+                self.model.state_dict(),
+                f"{self.config['save_dir']}/{self.lang}_model_{epoch}.pt"
+            )
 
-    losses = []
-    for epoch in range(config.num_epochs):
-        epoch_loss = 0
-        samples = 0
-        
-        for step, tokens in tqdm(enumerate(dataloader)):
-            loss = model(tokens, return_type="loss")
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            epoch_loss += loss.item()
-            samples += tokens.shape[0]
-
-            if config.print_every is not None and step % config.print_every == 0 and step > 0:
-                print()
-                print(f"Epoch {epoch+1} Samples {samples} Step {step} Loss {loss.item()}")
-            if config.max_steps is not None and step >= config.max_steps:
-                break
-            
-        epoch_loss /= len(dataloader)
-        losses.append(epoch_loss)
-        print(f"Epoch {epoch+1} Loss {epoch_loss}")
-        torch.save(model.state_dict(), f"{config.save_dir}/{lang}_model_{epoch}.pt")
-
-    return model
+        return model
     
 
 if __name__ == "__main__":
@@ -92,5 +69,18 @@ if __name__ == "__main__":
     parser.add_argument("--work_dir", help="Directory containing models and data")
     parser.add_argument("--lang", help="Language to train")
     args = parser.parse_args()
-    
-    peggpt_train(args.lang, args.work_dir)
+
+
+    with open("config.json", "r") as f:
+        config = json.load(f)
+    config["device"] = "cuda" if torch.cuda.is_available() else "cpu"
+    config["t_vocab"] = len(dataset.alpha)
+    config["s_vocab"] = len(dataset.alpha)
+    config["save_dir"] = f"{args.work_dir}/models"
+
+    dataset = get_data(args.lang, args.work_dir)
+    model = Transformer(TransformerConfig.from_dict(config))
+    loss_fn = torch.nn.CrossEntropyLoss()
+
+    trainer = Trainer(model, config, loss_fn, dataset, args.lang)
+    model = trainer.train()

@@ -1,0 +1,15 @@
+{
+    "L_enc": 0,
+    "L_dec": 2,
+    "d_m": 128,
+    "N_max": 32,
+    "n_h": 4,
+    "d_mlp": 512,
+    "epochs": 5,
+    "seed": 42,
+    "batch_size": 32,
+    "lr": 0.0005,
+    "pe": 10000,
+    "wandb": 0,
+    "wandb_project": "peg-probing"
+}
