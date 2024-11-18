@@ -9,7 +9,9 @@
     "seed": 42,
     "batch_size": 32,
     "lr": 0.0005,
-    "pe": 2000,
+    "log_every": 2000,
+    "val_every": 2000,
+    "val_steps": 20,
     "wandb": 1,
     "wandb_project": "peg-probing",
     "device": "cuda"
