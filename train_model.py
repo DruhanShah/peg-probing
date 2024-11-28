@@ -1,106 +1,144 @@
-import argparse, sys
-import json
-from data.generate import LangDataset, ALPHA
-from model.transformer import Transformer, TransformerConfig
+import hydra
 import torch
-from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
-import wandb
+from torch import nn
+import torch.nn.functional as F
+from tqdm import tqdm
+
+from model import GPT
+from data import get_dataloader
+from evals import grammar_evals
+
+from utils import init_wandb, set_seed, save_config, open_log, cleanup
+from utils import sanity_checks, configure_optimizers, update_cosine_warmup_lr
+from utils import save_model, move_to_device, log_train, log_eval
 
 
-def get_data(lang, work_dir, device):
-    with open(f"{work_dir}/data/corpus/{lang}.txt", "r") as file:
-        data = file.readlines()
-    for i, line in enumerate(data):
-        if line[-1] == "\n":
-            data[i] = line[:-1]
-    dataset = LangDataset(lang, data, device)
-    return dataset
+@hydra.main(config_path=".", config_name="config.yaml", version_base="1.3")
+def main(cfg):
+    init_wandb(cfg)
+    set_seed(cfg.seed)
+    save_config(cfg)
+    fp = open_log(cfg)
+    device = cfg.device if torch.cuda.is_available() else "cpu"
+
+    dataloader = get_dataloader(
+        language=cfg.data.language,
+        config=cfg.data.config,
+        num_iters=cfg.data.num_iters,
+        max_sample_length=cfg.data.max_sample_length,
+        seed=cfg.seed,
+        batch_size=cfg.data.batch_size,
+        num_workers=cfg.data.num_workers,
+    )
+
+    sanity_checks(cfg, dataloader.dataset.max_sample_length)
+
+    model = GPT(cfg.model, dataloader.dataset.PEG.vocab_size)
+    model.to(device)
+    if cfg.model.compile:
+        model = torch.compile(model)
+    print(f"No. of parameters: {model.get_num_params()/1e6:.2f}M")
+
+    optimizer = configure_optimizers(model, cfg.optimizer)
+
+    train(cfg, model, dataloader, optimizer, device)
+    cleanup(cfg, fp)
 
 
-class Trainer:
+def train(cfg, model, dataloader, optimizer, device):
+    """
+    Function to train the base model
+    """
+    model.train()
 
-    def __init__(self, model, config, loss_fn, dataset, lang):
-        self.lang = lang
-        self.model = model
-        self.config = config
-        self.dataset = dataset
+    save_grammar = True
+    dt = torch.bfloat16 if cfg.bf16 else torch.float32
 
-        self.loss_fn = loss_fn
-        self.dataloader = DataLoader(
-            self.dataset,
-            batch_size=config["batch_size"],
-            shuffle=True
-        )
-        if self.config["wandb"]:
-            wandb.init(project=self.config["wandb_project"])
+    total_steps = len(dataloader) * cfg.epochs
 
-    def val_loop(self):
-        for _ in range(self.config["val_steps"]):
-            prompt = [self.dataset.stoi["<bos>"]]
-            prompt = torch.tensor(prompt, dtype=torch.long).unsqueeze(0)
-            prompt = prompt.to(self.config["device"])
+    train_loss = {"total": []}
+    for k in dataloader.dataset.tasks_dict.keys():
+        train_loss[k] = []
+    lr, it, save_tables = 0, 0, 0
+    print(f"Total training steps: {total_steps}")
+    print(f"Learning rate warmup steps: {cfg.optim.warmup_steps}")
 
-            output = self.model.sample(prompt, max_len=self.config["N_max"])
-            st = "".join([self.dataset.alpha[i] for i in output[0].tolist()])
-            print(st)
+    results_dir = save_model(cfg, model, optimizer, it)
 
-    def train_loop(self):
-        torch.manual_seed(self.config["seed"])
+    if cfg.model.use_pretrained:
+        model.load_state_dict(torch.load(cfg.model.pretrain_dir)["net"])
+        optimizer.load_state_dict(torch.load(cfg.model.pretrain_dir)["optim"])
 
-        self.model.train()
-        self.model.to(self.config["device"])
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config["lr"])
+    # Training loop
+    for e in range(cfg.epochs):
+        for sequences, seq_lengths in tqdm(dataloader, desc=f"Epoch {e+1}"):
+            if it > 7e4:
+                save_model(cfg, model, optimizer, it)
+                break
 
-        for epoch in range(self.config["epochs"]):
-            epoch_loss = 0
-            for step, tokens in tqdm(enumerate(self.dataloader)):
-                x, y = tokens[:, :-1], tokens[:, 1:]
-                y_pred = self.model(x, y)
-                y_pred = y_pred.contiguous().view(-1, config["t_vocab"])
-                y = y.contiguous().view(-1)
-                loss = self.loss_fn(y_pred, y)
-                loss.backward()
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-                epoch_loss += (loss.item() - epoch_loss)/(step+1)
+            B = sequences.size(0)
+            inputs, labels = move_to_device([sequences[:, :-1], sequences[:, 1:]], device)
 
-                if step % self.config["val_every"] == 0 and step > 0:
-                    self.val_loop()
+            samples_per_task = {
+                k: inputs[:, 1] == dataloader.dataset.task_token_idx[k]
+                for k in dataloader.dataset.tasks_token_idx
+            }
 
-                if step % self.config["log_every"] == 0 and step > 0:
-                    if self.config["wandb"]:
-                        wandb.log({"loss": epoch_loss})
-                    else:
-                        print()
-                        print(f"Epoch {epoch+1} Step {step} Loss {loss.item()}")
+            train_lengths = {
+                "max": seq_lengths.max().item(),
+                "min": seq_lengths.min().item(),
+                "mean": seq_lengths.mean().item(),
+            }
 
-            print(f"Epoch {epoch+1} Loss {epoch_loss}")
-            state_dict = self.model.state_dict()
-            torch.save(
-                state_dict,
-                f"{self.config['save_dir']}/{self.lang}_model_{epoch+1}.pt"
-            )
+            if it % cfg.log.log_interval == 0:
+                train_loss = log_train(it, cfg.deploy, lr, train_loss, train_lengths)
 
-        return model
-    
+                
+            if it % cfg.log.eval_interval == 0:
+                model.eval()
+                grammar_results_dict = grammar_evals(
+                    cfg=cfg, model=model, templates=dataloader.dataset.templates,
+                    grammar=dataloader.dataset.PEG, device=device,
+                ) if cfg.eval.grammar else (None, None)
+                save_tables = log_eval(
+                    deploy=cfg.deploy, it=it, save_tables=save_tables,
+                    grammaticality_results=grammar_results_dict,
+                )
+                model.train()
+
+            it, lr = update_cosine_warmup_lr(it, cfg.optimizer, optimizer, total_steps)
+
+            optimizer.zero_grad(set_to_none=True)
+            device_type = "cuda" if "cuda" in device else "cpu"
+            with torch.amp.autocast(device_type=device_type, dtype=dt):
+                logits = model(inputs)
+                loss = F.cross_entropy(
+                    logits.reshape(-1, logits.size(-1)),
+                    labels.reshape(-1),
+                    ignore_index=dataloader.dataset.pad_token_idx,
+                    reduction="none",
+                ).reshape(B, -1).mean(dim=1)
+
+                for k in dataloader.dataset.task_tokens:
+                    train_loss[k].append(loss[samples_per_task[k]].mean().item())
+
+                loss = loss.mean()
+                train_loss["total"].append(loss.item())
+
+            loss.backward()
+            if cfg.optimizer.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.optimizer.grad_clip)
+            optimizer.step()
+
+            if it % cfg.log.save_interval == 0:
+                save_model(cfg, model, optimizer, it)
+            if save_grammar:
+                dataloader.dataset.save_grammar(results_dir)
+                save_gramar = False
+
+        save_model(cfg, model, optimizer, it)
+
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--work_dir", help="Directory containing models and data")
-    parser.add_argument("--lang", help="Language to train")
-    args = parser.parse_args()
-
-    with open("config.json", "r") as f:
-        config = json.load(f)
-    config["t_vocab"] = len(ALPHA[args.lang]) + 2
-    config["s_vocab"] = len(ALPHA[args.lang]) + 2
-    config["save_dir"] = f"{args.work_dir}/model/models"
-
-
-    dataset = get_data(args.lang, args.work_dir, config["device"])
-    model = Transformer(TransformerConfig.from_dict(config))
-    loss_fn = torch.nn.CrossEntropyLoss()
-
-    trainer = Trainer(model, config, loss_fn, dataset, args.lang)
-    model = trainer.train_loop()
+    main()

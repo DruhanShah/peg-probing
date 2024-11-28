@@ -1,3 +1,1 @@
-from .transformer import Transformer, TransformerConfig
-
-__all__ = ["Transformer", "TransformerConfig"]
+from .model import GPT

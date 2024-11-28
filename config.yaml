@@ -1,0 +1,70 @@
+deploy: True
+project_name: "peg-probing"
+tag: scratch
+seed: 42
+
+device : "cuda"
+bf16: True
+epochs: 1
+
+data:
+  language: "star"
+  config:
+    n_digits: 10 # for expr
+  max_sample_length: 30
+  num_iters: 1e6
+  batch_size: 128 
+  num_workers: 0
+
+model:
+  compile: False
+  context_size: 256
+  n_layer: 2
+  n_head: 2
+  n_embd: 128
+  dropout: 0.0
+  bias: False
+  mlp: True
+  use_pretrained: False
+  pretrain_dir: './pretrained/latest_ckpt.pt'
+
+optimizer:
+  learning_rate: 1e-3
+  weight_decay: 1e-4
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+
+  decay_lr: True
+  warmup_iters: 200
+  min_lr: 9e-4
+
+eval:
+  save_tables: False
+  grammar: True
+
+log: 
+  save_multiple: False
+  log_interval: 10
+  eval_interval: 100
+  save_interval: 100
+  free: False
+
+
+# Nested configs. Disable hydra logging
+defaults:
+  - _self_
+  - override hydra/job_logging: disabled
+  - override hydra/hydra_logging: disabled
+
+# Disable hydra directory structure
+hydra:
+  output_subdir: Null
+  job:
+    chdir: False
+  run:
+    dir: .
+
+  sweep:
+    dir: .
+    subdir: .
