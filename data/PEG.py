@@ -50,17 +50,22 @@ GRAMMAR = {
         """,
 }
 
+ALPHABET = {
+        "triple": list("abc"),
+        "star": list("ab"),
+        "brack": list("ab[]"),
+        "dyck1": list("()"),
+        "dyck2": list("()[]"),
+        "dyck3": list("()[]{}"),
+        "expr": list("0123456789()+*^"),
+}
+
 
 class PEG:
 
-    def __init__(
-        self,
-        language,
-        alphabet,
-        max_length=30,
-    ):
+    def __init__(self, language, max_length=30):
         self.language = language
-        self.alphabet = ["<bos>", "<eos>"] + list(alphabet)
+        self.alphabet = ["<bos>", "<eos>", "<pad>"] + ALPHABET[language]
         self.grammar = Grammar(GRAMMAR[language])
         self.max_length = max_length
 
@@ -70,7 +75,7 @@ class PEG:
 
 
     def tokenize_string(self, string):
-        tokens = list(string)
+        tokens = ["<bos>"] + list(string) + ["<eos>"]
         token_indices = [self.stoi[token] for token in tokens]
         return token_indices
 
@@ -88,11 +93,16 @@ class PEG:
                 continue
         return prefix
 
+    def check_grammaticality(self, string):
+        pref = self.count_prefix(string)
+        return (pref > -1), pref
+
     def sentence_generator(self, num_samples):
         for _ in range(num_samples):
             while True:
-                s = "".join(random.choices(self.alphabet[2:], k=self.max_length))
-                if self.count_prefix(s) > 0:
-                    yield s
+                s = "".join(random.choices(self.alphabet[3:], k=self.max_length))
+                p = self.count_prefix(s)
+                if p > 0:
+                    yield s, p
                     break
             

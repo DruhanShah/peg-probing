@@ -17,21 +17,24 @@ from utils import save_model, move_to_device, log_train, log_eval
 def main(cfg):
     init_wandb(cfg)
     set_seed(cfg.seed)
-    save_config(cfg)
+    # save_config(cfg)
     fp = open_log(cfg)
     device = cfg.device if torch.cuda.is_available() else "cpu"
 
+    data_dir = cfg.work_dir + "/" + cfg.data.save_dir
     dataloader = get_dataloader(
         language=cfg.data.language,
         config=cfg.data.config,
+        precomp=cfg.data.precomp,
+        results_dir=data_dir,
         num_iters=cfg.data.num_iters,
-        max_sample_length=cfg.data.max_sample_length,
+        max_len=cfg.data.max_len,
         seed=cfg.seed,
         batch_size=cfg.data.batch_size,
         num_workers=cfg.data.num_workers,
     )
 
-    sanity_checks(cfg, dataloader.dataset.max_sample_length)
+    sanity_checks(cfg, dataloader.dataset.max_len)
 
     model = GPT(cfg.model, dataloader.dataset.PEG.vocab_size)
     model.to(device)
@@ -56,18 +59,17 @@ def train(cfg, model, dataloader, optimizer, device):
 
     total_steps = len(dataloader) * cfg.epochs
 
-    train_loss = {"total": []}
-    for k in dataloader.dataset.tasks_dict.keys():
-        train_loss[k] = []
-    lr, it, save_tables = 0, 0, 0
+    train_loss = {"loss": []}
+    lr, it, save_tables = 0.0, 0, 0
     print(f"Total training steps: {total_steps}")
-    print(f"Learning rate warmup steps: {cfg.optim.warmup_steps}")
+    print(f"Learning rate warmup steps: {cfg.optimizer.warmup_steps}")
 
     results_dir = save_model(cfg, model, optimizer, it)
 
     if cfg.model.use_pretrained:
-        model.load_state_dict(torch.load(cfg.model.pretrain_dir)["net"])
-        optimizer.load_state_dict(torch.load(cfg.model.pretrain_dir)["optim"])
+        pretrain_dir = cfg.work_dir + "/" + cfg.model.pretrain_dir
+        model.load_state_dict(torch.load(pretrain_dir)["net"])
+        optimizer.load_state_dict(torch.load(pretrain_dir)["optim"])
 
     # Training loop
     for e in range(cfg.epochs):
@@ -79,11 +81,6 @@ def train(cfg, model, dataloader, optimizer, device):
             B = sequences.size(0)
             inputs, labels = move_to_device([sequences[:, :-1], sequences[:, 1:]], device)
 
-            samples_per_task = {
-                k: inputs[:, 1] == dataloader.dataset.task_token_idx[k]
-                for k in dataloader.dataset.tasks_token_idx
-            }
-
             train_lengths = {
                 "max": seq_lengths.max().item(),
                 "min": seq_lengths.min().item(),
@@ -94,16 +91,17 @@ def train(cfg, model, dataloader, optimizer, device):
                 train_loss = log_train(it, cfg.deploy, lr, train_loss, train_lengths)
 
                 
-            if it % cfg.log.eval_interval == 0:
+            if it % cfg.log.eval_interval == 0 and it > 0:
                 model.eval()
-                grammar_results_dict = grammar_evals(
-                    cfg=cfg, model=model, templates=dataloader.dataset.templates,
+                (grammar_results_dict, failures), _ = grammar_evals(
+                    cfg=cfg, model=model, template=dataloader.dataset.template,
                     grammar=dataloader.dataset.PEG, device=device,
-                ) if cfg.eval.grammar else (None, None)
+                ) if cfg.eval.grammar else None, None
                 save_tables = log_eval(
-                    deploy=cfg.deploy, it=it, save_tables=save_tables,
+                    cfg=cfg, it=it, save_tables=save_tables,
                     grammaticality_results=grammar_results_dict,
-                )
+                    failures=failures
+                ) if cfg.eval.save_tables else save_tables
                 model.train()
 
             it, lr = update_cosine_warmup_lr(it, cfg.optimizer, optimizer, total_steps)
@@ -115,22 +113,19 @@ def train(cfg, model, dataloader, optimizer, device):
                 loss = F.cross_entropy(
                     logits.reshape(-1, logits.size(-1)),
                     labels.reshape(-1),
-                    ignore_index=dataloader.dataset.pad_token_idx,
+                    ignore_index=dataloader.dataset.pad_token_id,
                     reduction="none",
                 ).reshape(B, -1).mean(dim=1)
 
-                for k in dataloader.dataset.task_tokens:
-                    train_loss[k].append(loss[samples_per_task[k]].mean().item())
-
                 loss = loss.mean()
-                train_loss["total"].append(loss.item())
+                train_loss["loss"].append(loss.item())
 
             loss.backward()
             if cfg.optimizer.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.optimizer.grad_clip)
             optimizer.step()
 
-            if it % cfg.log.save_interval == 0:
+            if it % cfg.log.save_interval == 0 and it > 0:
                 save_model(cfg, model, optimizer, it)
             if save_grammar:
                 dataloader.dataset.save_grammar(results_dir)

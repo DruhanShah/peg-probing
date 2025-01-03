@@ -49,11 +49,11 @@ def update_cosine_warmup_lr(it, cfg, optimizer, total_steps):
     lr = cfg.learning_rate
 
     if cfg.decay_lr:
-        if it < cfg.warmup_iters:
-            lr = lr * (it) / cfg.warmup_iters
+        if it < cfg.warmup_steps:
+            lr = lr * (it) / cfg.warmup_steps
         else:
-            num = (it - cfg.warmup_iters)
-            decay_ratio = num / (total_steps - cfg.warmup_iters)
+            num = (it - cfg.warmup_steps)
+            decay_ratio = num / (total_steps - cfg.warmup_steps)
             coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
             lr = cfg.min_lr + coeff * (lr - cfg.min_lr)
         

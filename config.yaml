@@ -5,16 +5,20 @@ seed: 42
 
 device : "cuda"
 bf16: True
-epochs: 1
+epochs: 3
+
+work_dir: "/scratch/druhan.probing"
 
 data:
-  language: "star"
+  language: "dyck2"
   config:
     n_digits: 10 # for expr
-  max_sample_length: 30
-  num_iters: 1e6
+  max_len: 30
+  num_iters: 1000000
   batch_size: 128 
   num_workers: 0
+  precomp: True
+  save_dir: 'data'
 
 model:
   compile: False
@@ -26,7 +30,7 @@ model:
   bias: False
   mlp: True
   use_pretrained: False
-  pretrain_dir: './pretrained/latest_ckpt.pt'
+  pretrain_dir: 'pretrained/latest_ckpt.pt'
 
 optimizer:
   learning_rate: 1e-3
@@ -36,18 +40,18 @@ optimizer:
   grad_clip: 1.0
 
   decay_lr: True
-  warmup_iters: 200
+  warmup_steps: 200
   min_lr: 9e-4
 
 eval:
-  save_tables: False
+  save_tables: True
   grammar: True
 
 log: 
   save_multiple: False
-  log_interval: 10
-  eval_interval: 100
-  save_interval: 100
+  log_interval: 100
+  eval_interval: 1000
+  save_interval: 1000
   free: False
 
 
