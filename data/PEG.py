@@ -2,6 +2,7 @@ import random
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
+from data.utils import gen_triple, gen_star, gen_dyck_1, gen_dyck_2, gen_expr
 
 from parsimonious.grammar import Grammar
 from parsimonious.exceptions import IncompleteParseError, ParseError
@@ -97,12 +98,36 @@ class PEG:
         pref = self.count_prefix(string)
         return (pref > -1), pref
 
-    def sentence_generator(self, num_samples):
-        for _ in range(num_samples):
-            while True:
-                s = "".join(random.choices(self.alphabet[3:], k=self.max_length))
-                p = self.count_prefix(s)
-                if p > 0:
-                    yield s, p
-                    break
-            
+    def string_generator(self, samples):
+        funcs = {
+            "triple": gen_triple,
+            "star": gen_star,
+            "dyck-1": gen_dyck_1,
+            "dyck-2": gen_dyck_2,
+            "expr": gen_expr,
+        }
+
+        valid_lengths = {
+            "triple": list(range(3, 61, 3)),
+            "dyck-1": list(range(2, 63, 2)),
+            "dyck-2": list(range(2, 63, 2)),
+            "star": list(range(1, 63)),
+            "expr": list(range(1, 63)),
+        }
+
+        if self.lang not in funcs:
+            raise ValueError("Invalid language")
+
+        langfunc = funcs[self.lang]
+        langlen = valid_lengths[self.lang]
+
+        selected_lengths = []
+        while len(selected_lengths) < samples:
+            selected_lengths.extend(langlen)
+        selected_lengths = selected_lengths[:samples]
+
+        random.shuffle(selected_lengths)
+        for l in selected_lengths:
+            output = langfunc(l)
+            output += random.choices(self.alphabet[3:], k=self.max_length - l)
+            yield output
