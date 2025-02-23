@@ -47,3 +47,5 @@ def gen_expr(length):
     left_length = random.randint(1, length - 2)  # Split length between operands
     return random.choice(ops) + rand_prefix_expr(left_length) + rand_prefix_expr(length - 1 - left_length)
 
+def gen_brack(length):
+    pass
