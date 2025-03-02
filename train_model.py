@@ -17,7 +17,6 @@ from utils import save_model, move_to_device, log_train, log_eval
 def main(cfg):
     init_wandb(cfg)
     set_seed(cfg.seed)
-    # save_config(cfg)
     fp = open_log(cfg)
     device = cfg.device if torch.cuda.is_available() else "cpu"
 

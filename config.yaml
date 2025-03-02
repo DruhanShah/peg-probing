@@ -10,7 +10,7 @@ epochs: 3
 work_dir: "/scratch/druhan.probing"
 
 data:
-  language: "dyck2"
+  language: "dyck-2"
   config:
     n_digits: 10 # for expr
   max_len: 30
@@ -46,6 +46,7 @@ optimizer:
 eval:
   save_tables: True
   grammar: True
+  num_samples: 1024
 
 log: 
   save_multiple: False

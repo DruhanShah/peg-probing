@@ -1,51 +1,61 @@
 import random
 
-def gen_triple(length):
+def gen_triple(n):
     if length % 3: return ""
-    n = length // 3
-    return "a" * n + "b" * n + "c" * n
+    m = n // 3
+    return "a" * m + "b" * m + "c" * m
 
 
-def gen_star(length):
-    n = random.randint(0, length)
-    return "a" * n + "b" * (length - n)
+def gen_star(n):
+    m = random.randint(0, n)
+    return "a" * m + "b" * (n - m)
 
 
-def gen_dyck_1(length):
-    if length % 2: return ""
-    s, o, c = [], 0, 0
-    for _ in range(length):
-        if o < length // 2 and (c == o or random.choice([True, False])):
-            s.append("(")
-            o += 1
-        else:
-            s.append(")")
-            c += 1
-    return "".join(s)
+def gen_dyck_1(n):
+    if n == 0: return ""
+    if n == 2: return "()"
+    
+    s = 2*random.randint(1, n//2-1)
+    return (gen_dyck_1(s) + gen_dyck_1(n-s)
+            if random.random() < 0.5
+            else "(" + gen_dyck_1(n-2) + ")")
 
 
-def gen_dyck_2(length):
-    if length % 2: return ""
-    s, o, c = [], [0, 0], [0, 0]
-    for _ in range(length):
-        ch = random.choice([(o[0] < length // 2, "("), (o[1] < length // 2, "["), 
-                            (c[0] < o[0] and s[-1:] == ["("], ")"), 
-                            (c[1] < o[1] and s[-1:] == ["["], "]")])
-        if ch[0]: 
-            s.append(ch[1])
-            o[0] += ch[1] == "("
-            o[1] += ch[1] == "["
-            c[0] += ch[1] == ")"
-            c[1] += ch[1] == "]"
-    return "".join(s)
+def gen_dyck_2(n):
+    if n == 0: return ""
+    if n == 2: return random.choice(["()", "[]"])
+    
+    s = 2*random.randint(1, n//2-1)
+    o, c = tuple(random.choice(["()", "[]"]))
+    return (gen_dyck_2(s) + gen_dyck_2(n-s)
+            if random.random() < 0.5
+            else o + gen_dyck_2(n-2) + c)
 
 
-def gen_expr(length):
-    if length < 1: return ""
-    if length == 1: return str(random.randint(1, 9))  # Single operand
-    ops = ["+", "-", "*", "/"]
-    left_length = random.randint(1, length - 2)  # Split length between operands
-    return random.choice(ops) + rand_prefix_expr(left_length) + rand_prefix_expr(length - 1 - left_length)
+def gen_expr(n):
+    if n == 0: return ""
 
-def gen_brack(length):
-    pass
+    operators = list("+*^")
+    operands = list("0123456789")
+
+    root = ["operand", random.choice(operands)]
+    leaves = [root]
+    while n > 1:
+        chosen = random.choice(leaves)
+        leaves.remove(chosen)
+
+        left = ["operand", random.choice(operands)]
+        right = ["operand", random.choice(operands)]
+        chosen[0] = "operator"
+        chosen[1] = random.choice(operators)
+        chosen += [left, right]
+
+        leaves += [left, right]
+        n -= 2
+
+    def preorder(node):
+        return (node[1] + preorder(node[2]) + preorder(node[3])
+                if node[0] == "operator"
+                else node[1])
+
+    return preorder(root)

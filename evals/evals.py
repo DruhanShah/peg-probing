@@ -16,7 +16,7 @@ def grammar_evals(cfg, model, template, grammar, device):
         results_dict (dict): Results of the grammaticality evaluation.
     """
     model.eval()
-    eval_bsize = 1024
+    eval_bsize = cfg.eval.num_samples
 
     with torch.no_grad():
 
@@ -24,7 +24,7 @@ def grammar_evals(cfg, model, template, grammar, device):
         inputs = template.repeat(eval_bsize, 1).to(device)
         samples, per_token_logprobs = model.sample(
             inputs=inputs, 
-            max_new_tokens=cfg.data.max_len - 10, 
+            max_new_tokens=cfg.data.max_len, 
             retrieve_llhoods="tokens",
             )
 

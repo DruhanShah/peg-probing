@@ -24,17 +24,17 @@ GRAMMAR = {
         T2 = ~"a*b"
         T3 = ~"ab*"
         """,
-    "dyck1": """
+    "dyck-1": """
         S = "(" T ")" T
         T = S / ""
         """,
-    "dyck2": """
+    "dyck-2": """
         S = A / B
         A = "(" T ")" T
         B = "[" T "]" T
         T = S / ""
         """,
-    "dyck3": """
+    "dyck-3": """
         S = A / B / C
         A = "(" T ")" T
         B = "[" T "]" T
@@ -55,9 +55,9 @@ ALPHABET = {
         "triple": list("abc"),
         "star": list("ab"),
         "brack": list("ab[]"),
-        "dyck1": list("()"),
-        "dyck2": list("()[]"),
-        "dyck3": list("()[]{}"),
+        "dyck-1": list("()"),
+        "dyck-2": list("()[]"),
+        "dyck-3": list("()[]{}"),
         "expr": list("0123456789()+*^"),
 }
 
@@ -98,7 +98,7 @@ class PEG:
         pref = self.count_prefix(string)
         return (pref > -1), pref
 
-    def string_generator(self, samples):
+    def string_generator(self, num_samples):
         funcs = {
             "triple": gen_triple,
             "star": gen_star,
@@ -108,26 +108,26 @@ class PEG:
         }
 
         valid_lengths = {
-            "triple": list(range(3, 61, 3)),
-            "dyck-1": list(range(2, 63, 2)),
-            "dyck-2": list(range(2, 63, 2)),
-            "star": list(range(1, 63)),
-            "expr": list(range(1, 63)),
+            "triple": list(range(3, self.max_length-1, 3)),
+            "dyck-1": list(range(2, self.max_length-1, 2)),
+            "dyck-2": list(range(2, self.max_length-1, 2)),
+            "star": list(range(1, self.max_length-1)),
+            "expr": list(range(1, self.max_length-1)),
         }
 
-        if self.lang not in funcs:
-            raise ValueError("Invalid language")
+        if self.language not in funcs:
+            raise ValueError(f"Invalid language{self.language}")
 
-        langfunc = funcs[self.lang]
-        langlen = valid_lengths[self.lang]
+        langfunc = funcs[self.language]
+        langlen = valid_lengths[self.language]
 
         selected_lengths = []
-        while len(selected_lengths) < samples:
+        while len(selected_lengths) < num_samples:
             selected_lengths.extend(langlen)
-        selected_lengths = selected_lengths[:samples]
+        selected_lengths = selected_lengths[:num_samples]
 
         random.shuffle(selected_lengths)
         for l in selected_lengths:
             output = langfunc(l)
-            output += random.choices(self.alphabet[3:], k=self.max_length - l)
-            yield output
+            output += "".join(random.choices(self.alphabet[3:], k=self.max_length - l))
+            yield output, self.check_grammaticality(output)[-1]

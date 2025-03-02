@@ -24,7 +24,7 @@ class PEGDataset():
         self.pad_token_id = self.PEG.stoi[self.pad_token]
 
         self.generated = precomp
-        self.generator = self.PEG.sentence_generator(num_samples=self.num_iters)
+        self.generator = self.PEG.string_generator(num_samples=self.num_iters)
 
         self.template = torch.tensor(self.PEG.tokenize_string("")[:-1])
 
