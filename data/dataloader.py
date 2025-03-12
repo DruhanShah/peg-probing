@@ -10,15 +10,12 @@ import pickle as pkl
 
 class PEGDataset():
     
-    def __init__(
-        self, language, config, precomp,
-        num_iters, max_len, seed,
-    ):
+    def __init__(self, language, precomp, num_iters, max_len, seed):
 
         self.num_iters = num_iters
         self.max_len = max_len
 
-        self.PEG = PEG(language)
+        self.PEG = PEG(language, max_length=self.max_len)
 
         self.pad_token = "<pad>"
         self.pad_token_id = self.PEG.stoi[self.pad_token]
@@ -73,30 +70,23 @@ class PEGDataset():
         return sequence, seq_length
 
 
-def get_dataloader(
-        language, config, num_iters, max_len,
-        precomp, results_dir,
-        seed = 42,
-        batch_size = 32,
-        num_workers = 0,
-):
+def get_dataloader(cfg, seed = 42):
     dataset = PEGDataset(
-        language=language,
-        config=config,
-        precomp=precomp,
-        num_iters=num_iters,
-        max_len=max_len,
+        language=cfg.language,
+        precomp=cfg.precomp,
+        num_iters=cfg.num_iters,
+        max_len=cfg.max_len,
         seed=seed,
     )
-    dataset.load_data(results_dir)
+    dataset.load_data(cfg.results_dir)
 
     dataloader = DataLoader(
         dataset,
         sampler=torch.utils.data.RandomSampler(dataset, replacement=True),
         shuffle=False,
         pin_memory=True,
-        batch_size=batch_size,
-        num_workers=num_workers,
+        batch_size=cfg.batch_size,
+        num_workers=cfg.num_workers,
     )
 
     return dataloader

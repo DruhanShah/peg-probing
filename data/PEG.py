@@ -2,10 +2,11 @@ import random
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from data.utils import gen_triple, gen_star, gen_dyck_1, gen_dyck_2, gen_expr
-
+from itertools import cycle
 from parsimonious.grammar import Grammar
 from parsimonious.exceptions import IncompleteParseError, ParseError
+
+from data.utils import gen_triple, gen_star, gen_dyck_1, gen_dyck_2, gen_expr
 
 
 GRAMMAR = {
@@ -108,9 +109,9 @@ class PEG:
         }
 
         valid_lengths = {
-            "triple": list(range(3, self.max_length-1, 3)),
-            "dyck-1": list(range(2, self.max_length-1, 2)),
-            "dyck-2": list(range(2, self.max_length-1, 2)),
+            "triple": range(3, self.max_length-1, 3),
+            "dyck-1": range(2, self.max_length-1, 2),
+            "dyck-2": range(2, self.max_length-1, 2),
             "star": list(range(1, self.max_length-1)),
             "expr": list(range(1, self.max_length-1)),
         }
@@ -121,13 +122,7 @@ class PEG:
         langfunc = funcs[self.language]
         langlen = valid_lengths[self.language]
 
-        selected_lengths = []
-        while len(selected_lengths) < num_samples:
-            selected_lengths.extend(langlen)
-        selected_lengths = selected_lengths[:num_samples]
-
-        random.shuffle(selected_lengths)
-        for l in selected_lengths:
+        for l in cycle(langlen):
             output = langfunc(l)
             output += "".join(random.choices(self.alphabet[3:], k=self.max_length - l))
             yield output, self.check_grammaticality(output)[-1]

@@ -36,7 +36,7 @@ def configure_optimizers(net, optim_cfg):
     optimizer = torch.optim.AdamW(
         optim_groups, lr=optim_cfg.learning_rate,
         betas=(optim_cfg.beta1, optim_cfg.beta2), **extra_args)
-    print(f"using fused AdamW: {use_fused}")
+    print(f"Using fused AdamW" if use_fused else "Not using fused AdamW")
 
     return optimizer
 

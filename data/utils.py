@@ -1,7 +1,7 @@
 import random
 
 def gen_triple(n):
-    if length % 3: return ""
+    if n % 3: return ""
     m = n // 3
     return "a" * m + "b" * m + "c" * m
 

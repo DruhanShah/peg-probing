@@ -1,19 +1,12 @@
 deploy: True
 project_name: "peg-probing"
-tag: scratch
 seed: 42
-
-device : "cuda"
-bf16: True
-epochs: 3
 
 work_dir: "/scratch/druhan.probing"
 
 data:
-  language: "dyck-2"
-  config:
-    n_digits: 10 # for expr
-  max_len: 30
+  language: "triple"
+  max_len: 62
   num_iters: 1000000
   batch_size: 128 
   num_workers: 0
@@ -21,24 +14,23 @@ data:
   save_dir: 'data'
 
 model:
-  compile: False
-  context_size: 256
-  n_layer: 2
-  n_head: 2
+  n_layers: 2
   n_embd: 128
-  dropout: 0.0
-  bias: False
-  mlp: True
-  use_pretrained: False
-  pretrain_dir: 'pretrained/latest_ckpt.pt'
+  n_ctx: 64
+  d_model: 128
+  d_head: 64
 
-optimizer:
+train:
+  bf16: True
+  epochs: 15
+  device : "cuda"
+
+optim:
   learning_rate: 1e-3
   weight_decay: 1e-4
   beta1: 0.9
   beta2: 0.95
   grad_clip: 1.0
-
   decay_lr: True
   warmup_steps: 200
   min_lr: 9e-4
@@ -46,11 +38,11 @@ optimizer:
 eval:
   save_tables: True
   grammar: True
-  num_samples: 1024
+  num_samples: 2500
 
 log: 
   save_multiple: False
-  log_interval: 100
+  train_interval: 1000
   eval_interval: 1000
   save_interval: 1000
   free: False
