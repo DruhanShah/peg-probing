@@ -85,7 +85,7 @@ def train_model(cfg, model, dataloader, optimizer, device):
 
             if it_compare(it, cfg.log.train_interval):
                 train_loss = log_train(it, cfg.deploy, lr, train_loss)
-            if it_compare(it, cfg.log.eval_interval):
+            # if it_compare(it, cfg.log.eval_interval):
                 # Evals to be done here
             if it_compare(it, cfg.log.save_interval):
                 save_model(cfg, model, optimizer, it)
