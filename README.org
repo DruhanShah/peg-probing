@@ -1,6 +1,5 @@
+#+title: Interpretability using PEGs
 #+author: Druhan Shah, Abhinav S Menon and Manish Shrivastava
-
-* PEGs and DL Interpretability
 
 This is the repository containing all relevant code for the project "Parse Probing in PEGs".
 
@@ -8,7 +7,7 @@ This is the repository containing all relevant code for the project "Parse Probi
 
 Running on a local system is a good deal tricky, and the =config.yaml= file hasn't been prepared for it yet.
 
-For running this code on =ada.iiit.ac.in=, use =python_wrapper.sh= as a python executable, since it manages the locations of data, models and auxiliary logs in the scratch and share directories on Ada.
+For running this code on the =ada.iiit.ac.in= remote server, use =python_wrapper.sh= as a python executable, since it manages the locations of data, models and auxiliary logs in the scratch and share directories on Ada.
 
 #+begin_src bash
   python3 train_model.py # On local system

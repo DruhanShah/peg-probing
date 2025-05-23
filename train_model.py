@@ -1,12 +1,10 @@
 import hydra
 import torch
 from torch import nn
-import torch.nn.functional as F
 from tqdm import tqdm
 
-from transformer_lens import HookedTransformer, HookedTransformerConfig
-
 from data import get_dataloader
+from model import RecognizerModel
 from evals import grammar_evals
 
 from utils import init_wandb, set_seed, open_log, cleanup
@@ -37,11 +35,11 @@ def main(cfg):
 
     model_config = HookedTransformerConfig(
         **obj_to_dict(cfg.model),
-        dtype=torch.bfloat16 if cfg.model.bf16 else torch.float32,
+        dtype=torch.bfloat16 if cfg.train.bf16 else torch.float32,
         d_vocab=dataloader.dataset.PEG.vocab_size,
         n_devices=num_devices,
     )
-    model = HookedTransformer(model_config)
+    model = RecognizerModel(model_config)
     model.to(device)
     print(f"No. of parameters: {model.get_num_params()/1e6:.2f}M")
 
@@ -57,25 +55,24 @@ def train_model(cfg, model, dataloader, optimizer, device):
     """
     model.train()
 
-    dt = torch.bfloat16 if cfg.bf16 else torch.float32
-    total_steps = len(dataloader) * cfg.epochs
+    dt = torch.bfloat16 if cfg.train.bf16 else torch.float32
+    total_steps = len(dataloader) * cfg.train.epochs
     train_loss = {"loss": []}
     lr, it = 0.0, 0
 
     print(f"Total training steps: {total_steps}")
     print(f"Learning rate warmup steps: {cfg.optim.warmup_steps}")
 
-    for e in range(cfg.epochs):
-        for seqs, seq_lengths in tqdm(dataloader, desc=f"Epoch {e+1}"):
+    for e in range(cfg.train.epochs):
+        for seqs, classes in tqdm(dataloader, desc=f"Epoch {e+1}"):
             B = seqs.size(0)
-            inputs, labels = move_to_device([seqs[:, :-1], seqs[:, 1:]], device)
 
             it, lr = update_cosine_warmup_lr(it, cfg.optim, optimizer, total_steps)
             optimizer.zero_grad(set_to_none=True)
             device_type = "cuda" if "cuda" in device else "cpu"
 
             with torch.amp.autocast(device_type=device_type, dtype=dt):
-                logits = model(inputs, return_type="loss")
+                loss = model(seqs, classes, return_type="loss")
                 train_loss["loss"].append(loss.item())
 
             loss.backward()

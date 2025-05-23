@@ -1,1 +1,1 @@
-from .model import GPT
+from .model import RecognizerModel

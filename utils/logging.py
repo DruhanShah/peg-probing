@@ -63,9 +63,9 @@ def cleanup(cfg, fp):
     Close log file and wandb
     """
 
+    if fp is not None:
+        fp.close()
     if cfg.deploy:
-        if fp is not None:
-            fp.close()
         wandb.finish()
 
 
@@ -76,14 +76,11 @@ def log_gen(deploy, prefs):
 
     if deploy:
         fig, ax = plt.subplots()
-        plot_pref = {k: v for k, v in prefs.items() if v > 0}
-        ax.plot(plot_pref.keys(), plot_pref.values())
-        wandb.log({"gen.prefixes": fig})
 
 
 def log_train(it, deploy, lr, train_loss):
     """
-    Log training information
+    Log training loss information
     """
 
     if deploy and len(train_loss) > 0:

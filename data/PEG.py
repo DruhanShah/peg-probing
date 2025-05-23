@@ -1,7 +1,4 @@
 import random
-import torch
-from torch.utils.data import Dataset
-from tqdm import tqdm
 from itertools import cycle
 from parsimonious.grammar import Grammar
 from parsimonious.exceptions import IncompleteParseError, ParseError
@@ -10,20 +7,8 @@ from data.utils import gen_triple, gen_star, gen_dyck_1, gen_dyck_2, gen_expr
 
 
 GRAMMAR = {
-    "triple": """
-        S = &(A "c") ~"a+" B
-        A = "a" A? "b"
-        B = "b" B? "c"
-        """,
     "star": """
         S = ~"a*b*"
-        """,
-    "brack": """
-        S = "[" T "]"
-        T =  T1 / T2 / T3
-        T1 = "a" S "b"
-        T2 = ~"a*b"
-        T3 = ~"ab*"
         """,
     "dyck-1": """
         S = "(" T ")" T
@@ -53,13 +38,18 @@ GRAMMAR = {
 }
 
 ALPHABET = {
-        "triple": list("abc"),
         "star": list("ab"),
-        "brack": list("ab[]"),
         "dyck-1": list("()"),
         "dyck-2": list("()[]"),
         "dyck-3": list("()[]{}"),
-        "expr": list("0123456789()+*^"),
+        "expr": list("0123456789+*^"),
+}
+
+FUNCS = {
+    "star": gen_star,
+    "dyck-1": gen_dyck_1,
+    "dyck-2": gen_dyck_2,
+    "expr": gen_expr,
 }
 
 
@@ -67,17 +57,24 @@ class PEG:
 
     def __init__(self, language, max_length=30):
         self.language = language
-        self.alphabet = ["<bos>", "<eos>", "<pad>"] + ALPHABET[language]
+        self.alphabet = ["<bos>"] + ALPHABET[language]
         self.grammar = Grammar(GRAMMAR[language])
         self.max_length = max_length
 
         self.vocab_size = len(self.alphabet)
         self.stoi = {char: i for i, char in enumerate(self.alphabet)}
         self.itos = {i: char for i, char in enumerate(self.alphabet)}
-
+        if self.language == star:
+            self.valid_lengths = list(range(1, self.max_length+1))
+        if self.language == dyck-1:
+            self.valid_lengths = list(range(2, self.max_length+1, 2))
+        if self.language == dyck-2:
+            self.valid_lengths = list(range(2, self.max_length+1, 2))
+        if self.language == expr:
+            self.valid_lengths = list(range(1, self.max_length+1, 2))
 
     def tokenize_string(self, string):
-        tokens = ["<bos>"] + list(string) + ["<eos>"]
+        tokens = ["<bos>"] + list(string)
         token_indices = [self.stoi[token] for token in tokens]
         return token_indices
 
@@ -85,44 +82,39 @@ class PEG:
         tokens = [self.itos[token] for token in token_indices.tolist()]
         return "".join(tokens)
 
-    def count_prefix(self, string):
-        prefix = -1
-        for i in range(len(string)):
-            try:
-                self.grammar.parse(string[:i+1])
-                prefix = i+1
-            except (IncompleteParseError, ParseError):
-                continue
-        return prefix
+    def grammar_check(self, string):
+        try:
+            self.grammar.parse(string)
+        except (IncompleteParseError, ParseError):
+            return False
+        finally:
+            return True
 
-    def check_grammaticality(self, string):
-        pref = self.count_prefix(string)
-        return (pref > -1), pref
-
-    def string_generator(self, num_samples):
-        funcs = {
-            "triple": gen_triple,
-            "star": gen_star,
-            "dyck-1": gen_dyck_1,
-            "dyck-2": gen_dyck_2,
-            "expr": gen_expr,
-        }
-
-        valid_lengths = {
-            "triple": range(3, self.max_length-1, 3),
-            "dyck-1": range(2, self.max_length-1, 2),
-            "dyck-2": range(2, self.max_length-1, 2),
-            "star": list(range(1, self.max_length-1)),
-            "expr": list(range(1, self.max_length-1)),
-        }
-
-        if self.language not in funcs:
+    def positive_generator(self, length):
+        if self.language not in FUNCS:
             raise ValueError(f"Invalid language{self.language}")
+        if length not in self.valid_lengths:
+            raise ValueError(f"Invalid string length for {self.language}: {length}")
 
-        langfunc = funcs[self.language]
-        langlen = valid_lengths[self.language]
+        langfunc = FUNCS[self.language]
 
-        for l in cycle(langlen):
-            output = langfunc(l)
-            output += "".join(random.choices(self.alphabet[3:], k=self.max_length - l))
-            yield output, self.check_grammaticality(output)[-1]
+        positive_string = langfunc(length)
+        assert self.grammar_check(positive_string)
+        return positive_string
+
+    def negative_generator(self, length):
+        negative_string = ''.join(random.choices(alphabet, k=target_length))
+        
+        max_attempts = 10
+        attempts = 0
+        while self.grammar_check(negative_string) and attempts < max_attempts:
+            if len(negative_string) < self.max_length - 1:
+                negative_string += random.choice(alphabet)
+            else:
+                idx = random.randint(0, len(negative_string) - 1)
+                negative_string = (negative_string[:idx] + 
+                                   random.choice(alphabet) + 
+                                   negative_string[idx+1:])
+            attempts += 1
+        
+        return negative_string

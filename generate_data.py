@@ -21,9 +21,8 @@ def main(cfg):
         seed=cfg.seed,
     )
 
-    save_dir = cfg.work_dir + "/" + cfg.data.save_dir
-    prefix_freqs = dataset.save_data(save_dir, cfg.data.num_iters)
-    log_gen(cfg.deploy, prefix_freqs)
+    data_stats = dataset.save_data(cfg.work_dir, cfg.data.num_iters)
+    log_gen(cfg.deploy, data_stats)
     cleanup(cfg, fp)
 
 

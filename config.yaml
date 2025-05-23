@@ -7,11 +7,11 @@ work_dir: "/scratch/druhan.probing"
 data:
   language: "triple"
   max_len: 62
-  num_iters: 1000000
+  num_iters: 100000
   batch_size: 128 
   num_workers: 0
   precomp: True
-  save_dir: 'data'
+  save_dir: "data"
 
 model:
   n_layers: 2
@@ -19,6 +19,7 @@ model:
   n_ctx: 64
   d_model: 128
   d_head: 64
+  attention_dir: "bidirectional"
 
 train:
   bf16: True
