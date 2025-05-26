@@ -43,7 +43,7 @@ def open_log(cfg):
     Open log file but don't redirect stdout and stderr to it
     """
 
-    os.makedirs(cfg.work_dir + '/logs/' + cfg.tag, exist_ok=True)
+    os.makedirs(cfg.work_dir + "/logs/", exist_ok=True)
 
 
 def init_wandb(cfg):

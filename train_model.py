@@ -23,14 +23,9 @@ def main(cfg):
     set_seed(cfg.seed)
     fp = open_log(cfg)
     device = cfg.device if torch.cuda.is_available() else "cpu"
-    num_devices = torch.cuda.device_count()
+    num_devices = min(torch.cuda.device_count(), cfg.model.n_layers)
 
-    data_dir = cfg.work_dir + "/" + cfg.data.save_dir
-    dataloader = get_dataloader(
-        **obj_to_dict(cfg.data),
-        results_dir=data_dir,
-        seed=cfg.seed,
-    )
+    dataloader = get_dataloader(cfg=cfg.data, seed=cfg.seed)
     sanity_checks(cfg, dataloader.dataset.max_len)
 
     model_config = HookedTransformerConfig(
