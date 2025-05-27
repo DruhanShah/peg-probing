@@ -69,13 +69,16 @@ def cleanup(cfg, fp):
         wandb.finish()
 
 
-def log_gen(deploy, prefs):
+def log_gen(deploy, stats):
     """
     Log generated data information
     """
 
     if deploy:
         fig, ax = plt.subplots()
+        ax.plot(range(len(stats["pos"])), stats["pos"], label="Positive samples")
+        ax.plot(range(len(stats["neg"])), stats["neg"], label="Negative samples")
+        wandb.log({ "data": {"lengths": fig} })
 
 
 def log_train(it, deploy, lr, train_loss):

@@ -1,5 +1,19 @@
 import random
 
+LEAF = 0
+BRANCH = 1
+
+class ExprNode:
+
+    def __init__(self):
+        self.cat = LEAF
+
+    def branch(self, c1, c2):
+        self.cat = BRANCH
+        self.left = c1
+        self.right = c2
+
+
 def gen_triple(n):
     if n % 3: return ""
     m = n // 3
@@ -38,24 +52,23 @@ def gen_expr(n):
     operators = list("+*^")
     operands = list("0123456789")
 
-    root = ["operand", random.choice(operands)]
+    def preorder(node):
+        return (random.choice(operators)
+                + preorder(node.left)
+                + preorder(node.right)
+                if node.cat == BRANCH
+                else random.choice(operands))
+
+    root = ExprNode()
     leaves = [root]
-    while n > 1:
+    for _ in range(n//2):
         chosen = random.choice(leaves)
         leaves.remove(chosen)
 
-        left = ["operand", random.choice(operands)]
-        right = ["operand", random.choice(operands)]
-        chosen[0] = "operator"
-        chosen[1] = random.choice(operators)
-        chosen += [left, right]
-
+        left = ExprNode()
+        right = ExprNode()
+        chosen.branch(left, right)
         leaves += [left, right]
-        n -= 2
 
-    def preorder(node):
-        return (node[1] + preorder(node[2]) + preorder(node[3])
-                if node[0] == "operator"
-                else node[1])
-
-    return preorder(root)
+    result = preorder(root)
+    return result

@@ -1,11 +1,11 @@
-deploy: True
+deploy: False
 project_name: "peg-probing"
 seed: 42
 
-work_dir: "/scratch/druhan.probing"
+work_dir: "../Aux"
 
 data:
-  language: "triple"
+  language: "expr"
   max_len: 62
   num_iters: 100000
   batch_size: 128 
@@ -24,7 +24,7 @@ model:
 train:
   bf16: True
   epochs: 15
-  device : "cuda"
+  device : "cpu"
 
 optim:
   learning_rate: 1e-3
@@ -49,13 +49,11 @@ log:
   free: False
 
 
-# Nested configs. Disable hydra logging
 defaults:
   - _self_
   - override hydra/job_logging: disabled
   - override hydra/hydra_logging: disabled
 
-# Disable hydra directory structure
 hydra:
   output_subdir: Null
   job:

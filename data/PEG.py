@@ -3,7 +3,7 @@ from itertools import cycle
 from parsimonious.grammar import Grammar
 from parsimonious.exceptions import IncompleteParseError, ParseError
 
-from data.utils import gen_triple, gen_star, gen_dyck_1, gen_dyck_2, gen_expr
+from data.strings import gen_triple, gen_star, gen_dyck_1, gen_dyck_2, gen_expr
 
 
 GRAMMAR = {
@@ -27,14 +27,17 @@ GRAMMAR = {
         C = "{" T "}" T
         T = S / ""
         """,
+    "triple": """
+        S = &(A "c") ~"a+" B
+        A = "a" A? "b"
+        B = "b" B? "c"
+    """,
     "expr": """
-        S = M ("+" M)*
-        M = E ("*" E)*
-        E = V ("^" V)*
-        V = D / C
-        C = "(" S ")"
+        S = E / D
+        E = O S S
+        O = ~"[+*^]"
         D = ~"[0-9]"
-        """,
+    """,
 }
 
 ALPHABET = {
@@ -42,6 +45,7 @@ ALPHABET = {
         "dyck-1": list("()"),
         "dyck-2": list("()[]"),
         "dyck-3": list("()[]{}"),
+        "triple": list("abc"),
         "expr": list("0123456789+*^"),
 }
 
@@ -49,6 +53,7 @@ FUNCS = {
     "star": gen_star,
     "dyck-1": gen_dyck_1,
     "dyck-2": gen_dyck_2,
+    "triple": gen_triple,
     "expr": gen_expr,
 }
 
@@ -57,24 +62,26 @@ class PEG:
 
     def __init__(self, language, max_length=30):
         self.language = language
-        self.alphabet = ["<bos>"] + ALPHABET[language]
+        self.alphabet = ["<bos>", "<eos>"] + ALPHABET[language]
         self.grammar = Grammar(GRAMMAR[language])
         self.max_length = max_length
 
         self.vocab_size = len(self.alphabet)
         self.stoi = {char: i for i, char in enumerate(self.alphabet)}
         self.itos = {i: char for i, char in enumerate(self.alphabet)}
-        if self.language == star:
+        if self.language == "star":
             self.valid_lengths = list(range(1, self.max_length+1))
-        if self.language == dyck-1:
+        elif self.language == "dyck-1":
             self.valid_lengths = list(range(2, self.max_length+1, 2))
-        if self.language == dyck-2:
+        elif self.language == "dyck-2":
             self.valid_lengths = list(range(2, self.max_length+1, 2))
-        if self.language == expr:
+        elif self.language == "triple":
+            self.valid_lengths = list(range(3, self.max_length+1, 3))
+        elif self.language == "expr":
             self.valid_lengths = list(range(1, self.max_length+1, 2))
 
     def tokenize_string(self, string):
-        tokens = ["<bos>"] + list(string)
+        tokens = ["<bos>"] + list(string) + ["<eos>"]
         token_indices = [self.stoi[token] for token in tokens]
         return token_indices
 
@@ -91,8 +98,6 @@ class PEG:
             return True
 
     def positive_generator(self, length):
-        if self.language not in FUNCS:
-            raise ValueError(f"Invalid language{self.language}")
         if length not in self.valid_lengths:
             raise ValueError(f"Invalid string length for {self.language}: {length}")
 
@@ -103,18 +108,16 @@ class PEG:
         return positive_string
 
     def negative_generator(self, length):
-        negative_string = ''.join(random.choices(alphabet, k=target_length))
+        alphabet = [i for i in self.alphabet if i not in ["<bos>", "<eos>"]]
+        negative_string = ''.join(random.choices(alphabet, k=length))
         
-        max_attempts = 10
+        max_attempts = 20
         attempts = 0
         while self.grammar_check(negative_string) and attempts < max_attempts:
-            if len(negative_string) < self.max_length - 1:
-                negative_string += random.choice(alphabet)
-            else:
-                idx = random.randint(0, len(negative_string) - 1)
-                negative_string = (negative_string[:idx] + 
-                                   random.choice(alphabet) + 
-                                   negative_string[idx+1:])
+            idx = random.randint(0, len(negative_string) - 1)
+            negative_string = (negative_string[:idx] + 
+                                random.choice(alphabet) + 
+                                negative_string[idx+1:])
             attempts += 1
         
         return negative_string

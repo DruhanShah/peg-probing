@@ -25,7 +25,7 @@ class PEGDataset():
 
         self.PEG = PEG(language, max_length=self.max_len)
 
-        self.pad_token = "<bos>"
+        self.pad_token = "<eos>"
         self.pad_token_id = self.PEG.stoi[self.pad_token]
 
         self.generated = precomp
@@ -38,8 +38,12 @@ class PEGDataset():
         neg_samples = num_samples - pos_samples
         
         for _ in tqdm(range(pos_samples), desc="Generating positive samples"):
-            target_length = random.randint(1, self.max_len)
+            target_length = random.choice(self.PEG.valid_lengths)
             sequence = self.PEG.positive_generator(target_length)
+            if len(sequence) != target_length:
+                print(len(sequence), target_length)
+                print(sequence)
+                print()
             
             self.data.append(sequence)
             self.labels.append(1)
@@ -64,19 +68,19 @@ class PEGDataset():
         with open(data_path, "wb") as f:
             print(f"Saving data to {data_path}")
             pkl.dump({
-                'data': self.data,
-                'labels': self.labels
+                "data": self.data,
+                "labels": self.labels
             }, f)
 
-        pos_count = sum(self.labels)
-        neg_count = len(self.labels) - pos_count
-        length_stats = {
-            'positive_samples': pos_count,
-            'negative_samples': neg_count,
-            'total_samples': len(self.labels)
+        lengths = {
+            "pos": [0 for i in range(self.max_len+1)],
+            "neg": [0 for i in range(self.max_len+1)],
         }
-        
-        return length_stats
+        for string, label in zip(self.data, self.labels):
+            key = "pos" if label == 1 else "neg"
+            lengths[key][len(string)] += 1
+
+        return lengths
 
     def load_data(self, path_to_results):
         base_dir = os.path.join(path_to_results, "data")
@@ -84,8 +88,8 @@ class PEGDataset():
         
         with open(data_path, "rb") as f:
             saved_data = pkl.load(f)
-            self.data = saved_data['data']
-            self.labels = saved_data['labels']
+            self.data = saved_data["data"]
+            self.labels = saved_data["labels"]
 
     def __len__(self):
         return len(self.data) if self.generated else self.num_iters
