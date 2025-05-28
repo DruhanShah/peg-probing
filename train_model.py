@@ -60,8 +60,6 @@ def train_model(cfg, model, dataloader, optimizer, device):
 
     for e in range(cfg.train.epochs):
         for seqs, classes in tqdm(dataloader, desc=f"Epoch {e+1}"):
-            B = seqs.size(0)
-
             it, lr = update_cosine_warmup_lr(it, cfg.optim, optimizer, total_steps)
             optimizer.zero_grad(set_to_none=True)
             device_type = "cuda" if "cuda" in device else "cpu"
@@ -77,8 +75,8 @@ def train_model(cfg, model, dataloader, optimizer, device):
 
             if it_compare(it, cfg.log.train_interval):
                 train_loss = log_train(it, cfg.deploy, lr, train_loss)
-            # if it_compare(it, cfg.log.eval_interval):
-                # Evals to be done here
+            if it_compare(it, cfg.log.eval_interval):
+                grammar_evals(cfg, model, None, device_type, dt, seed=cfg.seed)
             if it_compare(it, cfg.log.save_interval):
                 save_model(cfg, model, optimizer, it)
 

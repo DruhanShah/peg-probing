@@ -13,6 +13,15 @@ data:
   precomp: True
   save_dir: "data"
 
+eval:
+  language: "expr"
+  max_len: 62
+  num_iters: 1000
+  batch_size: 1
+  num_workers: 0
+  precomp: False
+  save_dir: "data"
+
 model:
   n_layers: 2
   n_embd: 128
@@ -35,11 +44,6 @@ optim:
   decay_lr: True
   warmup_steps: 200
   min_lr: 9e-4
-
-eval:
-  save_tables: True
-  grammar: True
-  num_samples: 2500
 
 log: 
   save_multiple: False
