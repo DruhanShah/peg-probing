@@ -13,16 +13,13 @@ def sanity_checks(cfg, max_len):
     Basic sanity checks for model configuration and data compatibility
     """
 
-    assert(cfg.model.context_size >= max_len)
-    assert(cfg.model.n_embd % cfg.model.n_head == 0)
+    assert(cfg.model.n_ctx >= max_len)
+    assert(cfg.model.d_model % cfg.model.d_head == 0)
 
     if not torch.cuda.is_available():
         warnings.warn("WARNING: running on CPU", UserWarning)
-    else:
-        if not torch.cuda.is_bf16_supported():
-            warnings.warn("WARNING: running without BF16", UserWarning)
-        if not hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
-            raise NotImplementedError("Flash Attention requires PyTorch >= 2.0")
+    elif not torch.cuda.is_bf16_supported():
+        warnings.warn("WARNING: running without BF16", UserWarning)
 
 
 def set_seed(seed=0):

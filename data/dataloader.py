@@ -1,4 +1,5 @@
 import torch
+from omegaconf import OmegaConf
 from tqdm import tqdm
 from typing import Tuple
 from torch.utils.data import DataLoader
@@ -8,12 +9,11 @@ from .PEG import PEG
 import pickle as pkl
 import random
 
-from utils import obj_to_dict
-
 
 class PEGDataset():
     
-    def __init__(self, language, precomp, num_iters, max_len, seed):
+    def __init__(self, language, precomp, num_iters,
+                 max_len, seed, **other_args):
 
         self.num_iters = num_iters
         self.max_len = max_len
@@ -115,10 +115,10 @@ class PEGDataset():
         return sequence_tokens, label_tensor
 
 
-def get_dataloader(cfg, seed=42):
-    dataset = PEGDataset(**obj_to_dict(cfg), seed=seed)
+def get_dataloader(cfg, work_dir, seed=42):
+    dataset = PEGDataset(**OmegaConf.to_object(cfg), seed=seed)
     if cfg.precomp:
-        dataset.load_data()
+        dataset.load_data(work_dir)
 
     dataloader = DataLoader(
         dataset,
@@ -127,6 +127,7 @@ def get_dataloader(cfg, seed=42):
         pin_memory=True,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
+        collate_fn=collate_fn,
     )
 
     return dataloader
@@ -139,30 +140,20 @@ def collate_fn(batch):
     max_len = max(seq.size(0) for seq in sequences)
     
     padded_sequences = []
-    attention_masks = []
     
     for seq in sequences:
-        pad_length = max_len - seq.size(0)
-        if pad_length > 0:
-            # Assuming pad_token_id is 0 (index of <bos>)
-            padded_seq = torch.cat([seq, torch.zeros(pad_length, dtype=seq.dtype)])
+        pad_len = max_len - seq.size(0)
+        if pad_len > 0:
+            padded_seq = torch.cat([seq, torch.zeros(pad_len, dtype=seq.dtype)])
         else:
             padded_seq = seq
             
-        attention_mask = torch.cat([
-            torch.ones(seq.size(0), dtype=torch.long),
-            torch.zeros(pad_length, dtype=torch.long)
-        ])
-        
         padded_sequences.append(padded_seq)
-        attention_masks.append(attention_mask)
     
     sequences_tensor = torch.stack(padded_sequences)
-    attention_masks_tensor = torch.stack(attention_masks)
     labels_tensor = torch.stack(list(labels))
     
     return {
         'input_ids': sequences_tensor,
-        'attention_mask': attention_masks_tensor,
         'labels': labels_tensor
     }

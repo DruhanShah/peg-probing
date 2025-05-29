@@ -14,6 +14,7 @@ class RecognizerModel(nn.Module):
 
     def forward(self, x, y=None, return_type="logits"):
         x = self.transformer(x, return_type="logits")
+        print(x.shape)
         x = x[:, -1, :] # Last tokens? TODO: Get clear on this
         y_pred = self.classifier(x)
 

@@ -1,16 +1,17 @@
 import hydra
+from omegaconf import OmegaConf
 import torch
 from torch import nn
 from tqdm import tqdm
 
 from data import get_dataloader
 from model import RecognizerModel
+from transformer_lens import HookedTransformerConfig
 from evals import grammar_evals
 
 from utils import init_wandb, set_seed, open_log, cleanup
 from utils import sanity_checks, configure_optimizers, update_cosine_warmup_lr
 from utils import save_model, move_to_device, log_train, log_eval
-from utils import obj_to_dict
 
 
 def it_compare(it, interval):
@@ -23,20 +24,20 @@ def main(cfg):
     set_seed(cfg.seed)
     fp = open_log(cfg)
     device = cfg.device if torch.cuda.is_available() else "cpu"
-    num_devices = min(torch.cuda.device_count(), cfg.model.n_layers)
 
-    dataloader = get_dataloader(cfg=cfg.data, seed=cfg.seed)
+    dataloader = get_dataloader(cfg.data, cfg.work_dir, cfg.seed)
     sanity_checks(cfg, dataloader.dataset.max_len)
 
     model_config = HookedTransformerConfig(
-        **obj_to_dict(cfg.model),
+        **OmegaConf.to_object(cfg.model),
         dtype=torch.bfloat16 if cfg.train.bf16 else torch.float32,
         d_vocab=dataloader.dataset.PEG.vocab_size,
-        n_devices=num_devices,
     )
     model = RecognizerModel(model_config)
     model.to(device)
-    print(f"No. of parameters: {model.get_num_params()/1e6:.2f}M")
+
+    params = pytorch_total_params = sum(p.numel() for p in model.parameters())
+    print(f"No. of parameters: {params/1e6:.2f}M")
 
     optimizer = configure_optimizers(model, cfg.optim)
 
@@ -59,7 +60,8 @@ def train_model(cfg, model, dataloader, optimizer, device):
     print(f"Learning rate warmup steps: {cfg.optim.warmup_steps}")
 
     for e in range(cfg.train.epochs):
-        for seqs, classes in tqdm(dataloader, desc=f"Epoch {e+1}"):
+        for _in in tqdm(dataloader, desc=f"Epoch {e+1}"):
+            seqs, classes = _in["input_ids"], _in["labels"]
             it, lr = update_cosine_warmup_lr(it, cfg.optim, optimizer, total_steps)
             optimizer.zero_grad(set_to_none=True)
             device_type = "cuda" if "cuda" in device else "cpu"

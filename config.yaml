@@ -2,10 +2,11 @@ deploy: False
 project_name: "peg-probing"
 seed: 42
 
-work_dir: "../Aux"
+work_dir: "/scratch/druhan.probing"
+device : "cuda"
 
 data:
-  language: "expr"
+  language: "star"
   max_len: 62
   num_iters: 100000
   batch_size: 128 
@@ -24,16 +25,16 @@ eval:
 
 model:
   n_layers: 2
-  n_embd: 128
-  n_ctx: 64
-  d_model: 128
+  d_model: 256
   d_head: 64
+  n_ctx: 64
+  act_fn: 'gelu'
   attention_dir: "bidirectional"
+  n_devices: 1
 
 train:
   bf16: True
   epochs: 15
-  device : "cpu"
 
 optim:
   learning_rate: 1e-3
@@ -54,7 +55,6 @@ log:
 
 
 defaults:
-  - _self_
   - override hydra/job_logging: disabled
   - override hydra/hydra_logging: disabled
 
