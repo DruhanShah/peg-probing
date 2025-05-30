@@ -2,8 +2,8 @@ deploy: False
 project_name: "peg-probing"
 seed: 42
 
-work_dir: "/scratch/druhan.probing"
-device : "cuda"
+work_dir: "../Aux"
+device : "cpu"
 
 data:
   language: "star"

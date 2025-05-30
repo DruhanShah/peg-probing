@@ -13,12 +13,11 @@ class RecognizerModel(nn.Module):
         self.loss = nn.BCEWithLogitsLoss()
 
     def forward(self, x, y=None, return_type="logits"):
-        x = self.transformer(x, return_type="logits")
-        print(x.shape)
+        x = self.transformer.encoder_output(x)
         x = x[:, -1, :] # Last tokens? TODO: Get clear on this
-        y_pred = self.classifier(x)
+        y_pred = self.classifier(x).squeeze(-1)
 
         if return_type == "logits":
-            return y_pred.squeeze(-1)
+            return y_pred
         elif return_type == "loss":
-            return self.loss(y_pred, y)
+            return self.loss(y_pred, y.float())
