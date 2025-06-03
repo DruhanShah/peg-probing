@@ -71,11 +71,16 @@ def log_gen(deploy, stats):
     Log generated data information
     """
 
+    fig, ax = plt.subplots()
+    ax.plot(range(len(stats["pos"])), stats["pos"], label="Positive samples")
+    ax.plot(range(len(stats["neg"])), stats["neg"], label="Negative samples")
     if deploy:
-        fig, ax = plt.subplots()
-        ax.plot(range(len(stats["pos"])), stats["pos"], label="Positive samples")
-        ax.plot(range(len(stats["neg"])), stats["neg"], label="Negative samples")
-        wandb.log({ "data": {"lengths": fig} })
+        wandb.log({"data": {"lengths": fig}})
+    else:
+        fig.show()
+
+    stats = {"pos": [], "neg": []}
+    return stats
 
 
 def log_train(it, deploy, lr, train_loss):
@@ -83,29 +88,29 @@ def log_train(it, deploy, lr, train_loss):
     Log training loss information
     """
 
-    if deploy and len(train_loss) > 0:
-        log_dict = {"train_loss": {k: np.mean(v) for k, v in train_loss.items()}}
-        wandb.log(log_dict)
+    logs = {"train": {k: np.mean(v) for k, v in train_loss.items()}, "lr": lr}
+    if deploy:
+        wandb.log(logs)
+    else:
+        print(f"train_loss: {logs}")
 
-    train_loss = {k: [] for k in train_loss.keys()}
+    train_loss = {"loss": []}
     return train_loss
 
 
-def log_eval(cfg, it, grammaticality_results):
+def log_eval(it, deploy, eval_results):
     """
     Log eval information
     """
     
-    if cfg.deploy and grammaticality_results is not None:
-        prefs = [grammaticality_results["failures"]]
-        for i in range(cfg.data.max_len):
-            prefs.append(grammaticality_results["prefix"][i])
+    logs = {"eval": {k: np.mean(v) for k, v in eval_results.items()}}
+    if deploy:
+        wandb.log(logs)
+    else:
+        print(f"eval_results: {logs}")
 
-        fig, ax = plt.subplots()
-        plot_pref = {i: v for i, v in enumerate(prefs) if v > 0}
-        plot_pref[0] = prefs[0]
-        ax.plot(plot_pref.keys(), plot_pref.values())
-        wandb.log({"eval": {"failures": prefs[0], "prefixes": fig}})
+    eval_results = {"accuracy": [], "loss": []}
+    return eval_results
 
 
 def save_model(cfg, net, optimizer, it):
@@ -123,7 +128,7 @@ def save_model(cfg, net, optimizer, it):
         fdir = cfg.work_dir + "/models/" + cfg.data.language
         os.makedirs(fdir, exist_ok=True)
         if cfg.log.save_multiple:
-            fname = os.path.join(fdir, "ckpt_" + str(it+1) + ".pt")
+            fname = os.path.join(fdir, "ckpt_" + str(it) + ".pt")
         else:
             fname = os.path.join(fdir, "latest_ckpt.pt")
         torch.save(checkpoint, fname)

@@ -1,55 +1,59 @@
-deploy: False
+deploy: True
 project_name: "peg-probing"
 seed: 42
 
-work_dir: "../Aux"
-device : "cpu"
+work_dir: "/scratch/druhan.probing"
+device : "cuda"
 
 data:
-  language: "star"
-  max_len: 62
-  num_iters: 100000
-  batch_size: 128 
+  language: "expr"
+  max_len: 30
+  num_iters: 200000
+  batch_size: 64 
   num_workers: 0
   precomp: True
   save_dir: "data"
 
 eval:
   language: "expr"
-  max_len: 62
-  num_iters: 1000
+  max_len: 30
+  num_iters: 100
   batch_size: 1
   num_workers: 0
   precomp: False
   save_dir: "data"
 
 model:
-  n_layers: 2
-  d_model: 256
+  n_layers: 5
+  d_model: 128
   d_head: 64
-  n_ctx: 64
+  n_ctx: 32
   act_fn: 'gelu'
+  eps: 1e-4
   attention_dir: "bidirectional"
   n_devices: 1
 
 train:
   bf16: True
-  epochs: 15
+  epochs: 3
 
 optim:
-  learning_rate: 1e-3
-  weight_decay: 1e-4
+  learning_rate: 2e-2
+  weight_decay: 1e-3
   beta1: 0.9
-  beta2: 0.95
+  beta2: 0.9
   grad_clip: 1.0
   decay_lr: True
   warmup_steps: 200
-  min_lr: 9e-4
+  scheduler: "exponential"
+  one_minus_gamma: 1e-3
+  t_max: None
+  eta_min: None
 
 log: 
-  save_multiple: False
-  train_interval: 1000
-  eval_interval: 1000
+  save_multiple: True
+  train_interval: 50
+  eval_interval: 100
   save_interval: 1000
   free: False
 

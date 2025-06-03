@@ -1,6 +1,7 @@
 import math
 import inspect
 import torch
+from torch import optim
 from typing import List
 
 
@@ -30,34 +31,29 @@ def configure_optimizers(net, optim_cfg):
     num_decay_params = sum(p.numel() for p in decay_params)
     num_nodecay_params = sum(p.numel() for p in nodecay_params)
     
-    fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+    fused_available = 'fused' in inspect.signature(optim.AdamW).parameters
     use_fused = fused_available and torch.cuda.is_available()
     extra_args = dict(fused=True) if use_fused else dict()
-    optimizer = torch.optim.AdamW(
+    optimizer = optim.AdamW(
         optim_groups, lr=optim_cfg.learning_rate,
         betas=(optim_cfg.beta1, optim_cfg.beta2), **extra_args)
     print(f"Using fused AdamW" if use_fused else "Not using fused AdamW")
 
-    return optimizer
+    warmup = optim.lr_scheduler.LinearLR(
+        optimizer,
+        start_factor=0.25, total_iters=optim_cfg.warmup_steps,
+    )
+    decay = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        optim_cfg.t_max, optim_cfg.eta_min,
+    ) if optim_cfg.scheduler == "cosine" else optim.lr_scheduler.ExponentialLR(
+        optimizer, gamma=1-optim_cfg.one_minus_gamma,
+    )
 
+    scheduler = optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[warmup, decay],
+        milestones=[optim_cfg.warmup_steps],
+    )
 
-def update_cosine_warmup_lr(it, cfg, optimizer, total_steps):
-    """
-    Update learning rate with cosine warmup
-    """
-    it += 1
-    lr = cfg.learning_rate
-
-    if cfg.decay_lr:
-        if it < cfg.warmup_steps:
-            lr = lr * (it) / cfg.warmup_steps
-        else:
-            num = (it - cfg.warmup_steps)
-            decay_ratio = num / (total_steps - cfg.warmup_steps)
-            coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
-            lr = cfg.min_lr + coeff * (lr - cfg.min_lr)
-        
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-    
-    return it, lr
+    return optimizer, scheduler

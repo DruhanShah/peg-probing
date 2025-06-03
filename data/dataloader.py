@@ -40,11 +40,7 @@ class PEGDataset():
         for _ in tqdm(range(pos_samples), desc="Generating positive samples"):
             target_length = random.choice(self.PEG.valid_lengths)
             sequence = self.PEG.positive_generator(target_length)
-            if len(sequence) != target_length:
-                print(len(sequence), target_length)
-                print(sequence)
-                print()
-            
+
             self.data.append(sequence)
             self.labels.append(1)
         
@@ -101,16 +97,17 @@ class PEGDataset():
         else:
             if index % 2 == 0:
                 # Generate positive sample
-                sequence, _ = next(self.pos_generator)
+                target_length = random.choice(self.PEG.valid_lengths)
+                sequence = self.PEG.positive_generator(target_length)
                 label = 1
             else:
                 # Generate negative sample
-                target_length = random.randint(0, self.max_len)
-                sequence = self.generate_negative_sample(target_length)
+                target_length = random.randint(1, self.max_len)
+                sequence = self.PEG.negative_generator(target_length)
                 label = 0
         
         sequence_tokens = torch.tensor(self.PEG.tokenize_string(sequence))
-        label_tensor = torch.tensor(label, dtype=torch.long)
+        label_tensor = torch.tensor(label, dtype=torch.float)
         
         return sequence_tokens, label_tensor
 

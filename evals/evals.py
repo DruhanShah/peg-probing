@@ -1,20 +1,32 @@
 import torch
 from omegaconf import OmegaConf
 import numpy as np
+from tqdm import tqdm
 
 from data import get_dataloader
 
-def grammar_evals(cfg, model, grammar, work_dir, device, dt, seed):
-    model.eval()
-    dataloader = get_dataloader(cfg, work_dir, seed)
+def grammar_evals(cfg, model, device):
+    dataloader = get_dataloader(cfg.eval, cfg.work_dir, cfg.seed)
+    dt = torch.bfloat16 if cfg.train.bf16 else torch.float32
 
+    results = {
+        "loss": [],
+        "accuracy": [],
+    }
+    
     with torch.no_grad():
-        for seqs, classes in tqdm(dataloader, desc=f"Epoch {e+1}"):
-            optimizer.zero_grad(set_to_none=True)
-
+        for i, _in in enumerate(dataloader):
+            seqs = _in["input_ids"].to(device)
+            classes = _in["labels"].to(device).squeeze()
+            B = seqs.shape[0]
             with torch.amp.autocast(device_type=device, dtype=dt):
                 output = model(seqs, classes, return_type="logits")
-                print(output.shape)
-                # pred = torch.argmax(output, dim=)
+                loss = model.loss(output, classes).item()
+                pred = (output > 0).to(device)
+                success = (pred == classes)
+                acc = int(success.tolist())/B
 
-        return None
+            results["loss"].append(loss)
+            results["accuracy"].append(acc)
+
+    return results

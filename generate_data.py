@@ -21,7 +21,7 @@ def main(cfg):
     )
 
     data_stats = dataset.save_data(cfg.work_dir, cfg.data.num_iters)
-    log_gen(cfg.deploy, data_stats)
+    data_stats = log_gen(cfg.deploy, data_stats)
     cleanup(cfg, fp)
 
 

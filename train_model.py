@@ -10,7 +10,7 @@ from transformer_lens import HookedTransformerConfig
 from evals import grammar_evals
 
 from utils import init_wandb, set_seed, open_log, cleanup
-from utils import sanity_checks, configure_optimizers, update_cosine_warmup_lr
+from utils import sanity_checks, configure_optimizers
 from utils import save_model, move_to_device, log_train, log_eval
 
 
@@ -33,19 +33,19 @@ def main(cfg):
         dtype=torch.bfloat16 if cfg.train.bf16 else torch.float32,
         d_vocab=dataloader.dataset.PEG.vocab_size,
     )
-    model = RecognizerModel(model_config)
+    model = RecognizerModel(model_config, device)
     model.to(device)
 
     params = pytorch_total_params = sum(p.numel() for p in model.parameters())
     print(f"No. of parameters: {params/1e6:.2f}M")
 
-    optimizer = configure_optimizers(model, cfg.optim)
+    optimizer, scheduler = configure_optimizers(model, cfg.optim)
 
-    train_model(cfg, model, dataloader, optimizer, device)
+    train_model(cfg, model, dataloader, optimizer, scheduler, device)
     cleanup(cfg, fp)
 
 
-def train_model(cfg, model, dataloader, optimizer, device):
+def train_model(cfg, model, dataloader, optimizer, scheduler, device):
     """
     Function to train the base model
     """
@@ -54,7 +54,7 @@ def train_model(cfg, model, dataloader, optimizer, device):
     dt = torch.bfloat16 if cfg.train.bf16 else torch.float32
     total_steps = len(dataloader) * cfg.train.epochs
     train_loss = {"loss": []}
-    lr, it = 0.0, 0
+    it = 0
 
     print(f"Total training steps: {total_steps}")
     print(f"Learning rate warmup steps: {cfg.optim.warmup_steps}")
@@ -62,7 +62,8 @@ def train_model(cfg, model, dataloader, optimizer, device):
     for e in range(cfg.train.epochs):
         for _in in tqdm(dataloader, desc=f"Epoch {e+1}"):
             seqs, classes = _in["input_ids"], _in["labels"]
-            it, lr = update_cosine_warmup_lr(it, cfg.optim, optimizer, total_steps)
+            it += 1
+
             optimizer.zero_grad(set_to_none=True)
             device_type = "cuda" if "cuda" in device else "cpu"
 
@@ -74,11 +75,16 @@ def train_model(cfg, model, dataloader, optimizer, device):
             if cfg.optim.grad_clip > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), cfg.optim.grad_clip)
             optimizer.step()
+            scheduler.step()
 
             if it_compare(it, cfg.log.train_interval):
+                lr = optimizer.param_groups[0]["lr"]
                 train_loss = log_train(it, cfg.deploy, lr, train_loss)
             if it_compare(it, cfg.log.eval_interval):
-                grammar_evals(cfg, model, None, device_type, dt, seed=cfg.seed)
+                model.eval()
+                val_results = grammar_evals(cfg, model, device_type)
+                val_results = log_eval(it, cfg.deploy, val_results)
+                model.train()
             if it_compare(it, cfg.log.save_interval):
                 save_model(cfg, model, optimizer, it)
 
