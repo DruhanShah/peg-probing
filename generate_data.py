@@ -7,7 +7,7 @@ from utils import open_log, log_gen
 
 @hydra.main(config_path=".", config_name="config.yaml", version_base="1.3")
 def main(cfg):
-    init_wandb(cfg)
+    init_wandb(cfg, ["data_gen"])
     set_seed(cfg.seed)
     fp = open_log(cfg)
     device = cfg.device if torch.cuda.is_available() else "cpu"

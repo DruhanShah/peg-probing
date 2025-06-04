@@ -19,7 +19,7 @@ def configure_optimizers(net, optim_cfg):
     """
     Configure the optimizer and the learning rate scheduler
     """
-    param_dict = {pn: p for pn, p in net.named_parameters()}
+    param_dict = {pn: p for pn, p in net.named_parameters() if p.requires_grad}
     param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
 
     decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
@@ -31,23 +31,21 @@ def configure_optimizers(net, optim_cfg):
     num_decay_params = sum(p.numel() for p in decay_params)
     num_nodecay_params = sum(p.numel() for p in nodecay_params)
     
-    fused_available = 'fused' in inspect.signature(optim.AdamW).parameters
-    use_fused = fused_available and torch.cuda.is_available()
-    extra_args = dict(fused=True) if use_fused else dict()
-    optimizer = optim.AdamW(
-        optim_groups, lr=optim_cfg.learning_rate,
-        betas=(optim_cfg.beta1, optim_cfg.beta2), **extra_args)
-    print(f"Using fused AdamW" if use_fused else "Not using fused AdamW")
+    optimizer = optim.SGD(
+        optim_groups,
+        lr=optim_cfg.learning_rate, momentum=optim_cfg.momentum,
+        weight_decay=optim_cfg.weight_decay,
+    )
 
     warmup = optim.lr_scheduler.LinearLR(
         optimizer,
-        start_factor=0.25, total_iters=optim_cfg.warmup_steps,
+        start_factor=0.1, total_iters=optim_cfg.warmup_steps,
     )
-    decay = optim.lr_scheduler.CosineAnnealingLR(
+    decay = optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer,
-        optim_cfg.t_max, optim_cfg.eta_min,
+        T_0=optim_cfg.restart_steps, eta_min=optim_cfg.min_lr,
     ) if optim_cfg.scheduler == "cosine" else optim.lr_scheduler.ExponentialLR(
-        optimizer, gamma=1-optim_cfg.one_minus_gamma,
+        optimizer, gamma=1-optim_cfg.decay_factor,
     )
 
     scheduler = optim.lr_scheduler.SequentialLR(

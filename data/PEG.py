@@ -62,7 +62,7 @@ class PEG:
 
     def __init__(self, language, max_length=30):
         self.language = language
-        self.alphabet = ["<bos>", "<eos>"] + ALPHABET[language]
+        self.alphabet = ["<block>", "<eos>"] + ALPHABET[language] # Avoid 0 index
         self.grammar = Grammar(GRAMMAR[language])
         self.max_length = max_length
 
@@ -81,7 +81,7 @@ class PEG:
             self.valid_lengths = list(range(1, self.max_length+1, 2))
 
     def tokenize_string(self, string):
-        tokens = ["<bos>"] + list(string) + ["<eos>"]
+        tokens = list(string) + ["<eos>"]
         token_indices = [self.stoi[token] for token in tokens]
         return token_indices
 
@@ -108,7 +108,7 @@ class PEG:
         return positive_string
 
     def negative_generator(self, length):
-        alphabet = [i for i in self.alphabet if i not in ["<bos>", "<eos>"]]
+        alphabet = [i for i in self.alphabet if i not in ["<eos>", "<block>"]]
         negative_string = ''.join(random.choices(alphabet, k=length))
         
         max_attempts = 20

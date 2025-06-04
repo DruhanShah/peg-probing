@@ -41,15 +41,19 @@ def open_log(cfg):
     """
 
     os.makedirs(cfg.work_dir + "/logs/", exist_ok=True)
+    return open(f"{cfg.work_dir}/logs/{cfg.data.language}.log", "w")
 
 
-def init_wandb(cfg):
+def init_wandb(cfg, tags=None):
     """
     Initialize wandb
     """
 
     if cfg.deploy:
-        wandb.init(project=cfg.project_name)
+        wandb.init(
+            project=cfg.project_name,
+            tags=tags,
+        )
         wandb.run.name = wandb.run.id
         wandb.run.save()
         wandb.config.update(OmegaConf.to_container(cfg))
@@ -64,6 +68,20 @@ def cleanup(cfg, fp):
         fp.close()
     if cfg.deploy:
         wandb.finish()
+
+
+def log_debug(it, fp, deploy, debug_info):
+        """
+        Log debug information
+        """
+
+        log_file = fp
+        
+        print(f"Debug info at iteration {it}:\n{debug_info}", file=fp)
+        print("", file=fp)
+
+        debug_info = {}
+        return debug_info
 
 
 def log_gen(deploy, stats):

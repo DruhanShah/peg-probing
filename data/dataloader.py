@@ -19,21 +19,16 @@ class PEGDataset():
         self.max_len = max_len
         self.seed = seed
 
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-
         self.PEG = PEG(language, max_length=self.max_len)
 
         self.pad_token = "<eos>"
         self.pad_token_id = self.PEG.stoi[self.pad_token]
 
         self.generated = precomp
-
-    def save_data(self, path_to_results, num_samples):
         self.data = []
         self.labels = []
-        
+
+    def save_data(self, path_to_results, num_samples):
         pos_samples = num_samples // 2
         neg_samples = num_samples - pos_samples
         
@@ -137,20 +132,28 @@ def collate_fn(batch):
     max_len = max(seq.size(0) for seq in sequences)
     
     padded_sequences = []
+    padded_masks = []
     
     for seq in sequences:
         pad_len = max_len - seq.size(0)
         if pad_len > 0:
-            padded_seq = torch.cat([seq, torch.zeros(pad_len, dtype=seq.dtype)])
+            padded_seq = torch.cat([seq,
+                                    torch.ones(pad_len, dtype=seq.dtype)])
+            padded_mask = torch.cat([torch.ones(seq.size(0), dtype=seq.dtype),
+                                     torch.zeros(pad_len, dtype=seq.dtype)])
         else:
             padded_seq = seq
+            padded_mask = torch.ones(seq.size(0), dtype=seq.dtype)
             
         padded_sequences.append(padded_seq)
+        padded_masks.append(padded_mask)
     
     sequences_tensor = torch.stack(padded_sequences)
+    masks_tensor = torch.stack(padded_masks)
     labels_tensor = torch.stack(list(labels))
     
     return {
-        'input_ids': sequences_tensor,
-        'labels': labels_tensor
+        "input_ids": sequences_tensor,
+        "masks": masks_tensor,
+        "labels": labels_tensor
     }

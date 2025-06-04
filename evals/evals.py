@@ -1,6 +1,5 @@
 import torch
 from omegaconf import OmegaConf
-import numpy as np
 from tqdm import tqdm
 
 from data import get_dataloader
@@ -17,14 +16,15 @@ def grammar_evals(cfg, model, device):
     with torch.no_grad():
         for i, _in in enumerate(dataloader):
             seqs = _in["input_ids"].to(device)
+            masks = _in["masks"].to(device)
             classes = _in["labels"].to(device).squeeze()
             B = seqs.shape[0]
             with torch.amp.autocast(device_type=device, dtype=dt):
-                output = model(seqs, classes, return_type="logits")
+                output = model(seqs, classes, mask=masks, return_type="logits")
                 loss = model.loss(output, classes).item()
                 pred = (output > 0).to(device)
-                success = (pred == classes)
-                acc = int(success.tolist())/B
+                success = (pred == classes).tolist()
+                acc = sum(success)/B if isinstance(success, list) else int(success)
 
             results["loss"].append(loss)
             results["accuracy"].append(acc)
