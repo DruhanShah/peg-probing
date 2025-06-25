@@ -62,7 +62,7 @@ class PEG:
 
     def __init__(self, language, max_length=30):
         self.language = language
-        self.alphabet = ["<block>", "<eos>"] + ALPHABET[language] # Avoid 0 index
+        self.alphabet = ["<eos>"] + ALPHABET[language]
         self.grammar = Grammar(GRAMMAR[language])
         self.max_length = max_length
 
@@ -92,10 +92,9 @@ class PEG:
     def grammar_check(self, string):
         try:
             self.grammar.parse(string)
+            return True
         except (IncompleteParseError, ParseError):
             return False
-        finally:
-            return True
 
     def positive_generator(self, length):
         if length not in self.valid_lengths:
@@ -108,10 +107,10 @@ class PEG:
         return positive_string
 
     def negative_generator(self, length):
-        alphabet = [i for i in self.alphabet if i not in ["<eos>", "<block>"]]
+        alphabet = [i for i in self.alphabet if i not in ["<eos>"]]
         negative_string = ''.join(random.choices(alphabet, k=length))
         
-        max_attempts = 20
+        max_attempts = 40
         attempts = 0
         while self.grammar_check(negative_string) and attempts < max_attempts:
             idx = random.randint(0, len(negative_string) - 1)
@@ -121,3 +120,11 @@ class PEG:
             attempts += 1
         
         return negative_string
+
+    def parse_state_generator(self, string):
+        state = []
+        for i in range(len(string)):
+            state.append(self.grammar_check(string[:i+1]))
+        state.append(state[-1])  # Account for the first <eos> token
+        return state
+

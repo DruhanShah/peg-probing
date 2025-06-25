@@ -13,11 +13,11 @@ def main(cfg):
     device = cfg.device if torch.cuda.is_available() else "cpu"
 
     dataset = PEGDataset(
-        language=cfg.data.language,
-        precomp=cfg.data.precomp,
-        num_iters=cfg.data.num_iters,
-        max_len=cfg.data.max_len,
-        seed=cfg.seed,
+        language = cfg.lang,
+        precomp = cfg.data.precomp,
+        num_iters = cfg.data.num_iters,
+        max_len = cfg.data.max_len,
+        seed = cfg.seed,
     )
 
     data_stats = dataset.save_data(cfg.work_dir, cfg.data.num_iters)

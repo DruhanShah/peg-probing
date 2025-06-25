@@ -1,60 +1,78 @@
-deploy: False
+deploy: True
 project_name: "peg-probing"
 seed: 42
 
-work_dir: "/scratch/druhan.probing"
-device : "cuda"
+lang: "dyck-1"
+work_dir: "../Aux"
+device : "cpu"
 
 data:
-  language: "star"
   max_len: 30
-  num_iters: 1000
-  batch_size: 16 
-  num_workers: 0
+  num_iters: 8192
+  batch_size: 32
   precomp: True
   save_dir: "data"
-
-eval:
-  language: "star"
-  max_len: 30
-  num_iters: 200
-  batch_size: 4
   num_workers: 0
+
+shenanigans:
+  max_len: 30
+  num_iters: 10
+  batch_size: 1
   precomp: False
   save_dir: "data"
+  num_workers: 0
+
+eval:
+  max_len: 30
+  num_iters: 5
+  batch_size: 1
+  precomp: False
+  save_dir: "data"
+  num_workers: 0
 
 model:
-  n_layers: 2
-  d_model: 128
-  d_head: 32
+  n_l: 2
+  d_m: 96
+  d_h: 32
   n_ctx: 32
-  act_fn: 'gelu'
-  init_mode: "kaiming_normal"
-  attention_dir: "bidirectional"
-  post_embedding_ln: False
-  n_devices: 1
+  act_fn: "gelu"
+  act_cache: True
+  checkpoint: 5000
 
 train:
   bf16: False
-  epochs: 2
+  epochs: 15
+
+probe:
+  d_m: 96
+  linear: True
+  checkpoint: 1800
+
+parse:
+  max_len: 30
+  num_iters: 128
+  batch_size: 1
+  precomp: False
+  save_dir: "data"
+  num_workers: 0
 
 optim:
-  learning_rate: 5e-4
-  min_lr: 1e-4
+  learning_rate: 2e-2
+  min_lr: 2e-3
   weight_decay: 1e-5
-  momentum: 0.5
+  momentum: 0.9
   grad_clip: 1.0
-  decay_lr: True
-  warmup_steps: 200
+  decay_lr: False
+  warmup_steps: 0
   restart_steps: 2000
+  decay_factor: 5e-4
   scheduler: "cosine"
-  decay_factor: 1e-3
 
 log: 
   save_multiple: True
-  train_interval: 100
-  eval_interval: 100
-  save_interval: 0
+  train_interval: 1
+  eval_interval: 0
+  save_interval: 200
   free: False
 
 

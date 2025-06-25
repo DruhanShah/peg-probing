@@ -1,1 +1,2 @@
-from .model import RecognizerModel
+from .model import RecognizerModel, TransformerConfig
+from .probe import Probe, ProbeConfig

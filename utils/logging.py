@@ -14,7 +14,7 @@ def sanity_checks(cfg, max_len):
     """
 
     assert(cfg.model.n_ctx >= max_len)
-    assert(cfg.model.d_model % cfg.model.d_head == 0)
+    assert(cfg.model.d_m% cfg.model.d_h == 0)
 
     if not torch.cuda.is_available():
         warnings.warn("WARNING: running on CPU", UserWarning)
@@ -41,7 +41,7 @@ def open_log(cfg):
     """
 
     os.makedirs(cfg.work_dir + "/logs/", exist_ok=True)
-    return open(f"{cfg.work_dir}/logs/{cfg.data.language}.log", "w")
+    return open(f"{cfg.work_dir}/logs/{cfg.lang}.log", "w")
 
 
 def init_wandb(cfg, tags=None):
@@ -68,6 +68,7 @@ def cleanup(cfg, fp):
         fp.close()
     if cfg.deploy:
         wandb.finish()
+    return None
 
 
 def log_debug(it, fp, deploy, debug_info):
@@ -143,10 +144,31 @@ def save_model(cfg, net, optimizer, it):
             "iter": it,
             "config": cfg,
         }
-        fdir = cfg.work_dir + "/models/" + cfg.data.language
+        fdir = cfg.work_dir + "/models/" + cfg.lang
         os.makedirs(fdir, exist_ok=True)
         if cfg.log.save_multiple:
-            fname = os.path.join(fdir, "ckpt_" + str(it) + ".pt")
+            fname = os.path.join(fdir, f"ckpt_{it}.pt")
         else:
             fname = os.path.join(fdir, "latest_ckpt.pt")
+        torch.save(checkpoint, fname)
+
+
+def save_probe(cfg, probe, optimizer, it, task="probe"):
+    """
+    Save probe checkpoint
+    """
+
+    if cfg.deploy:
+        checkpoint = {
+            "net": probe.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "iter": it,
+            "config": cfg,
+        }
+        fdir = cfg.work_dir + "/probes/" + cfg.lang
+        os.makedirs(fdir, exist_ok=True)
+        if cfg.log.save_multiple:
+            fname = os.path.join(fdir, f"{task}_{it}.pt")
+        else:
+            fname = os.path.join(fdir, "latest_ps.pt")
         torch.save(checkpoint, fname)

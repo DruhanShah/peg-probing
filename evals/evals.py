@@ -5,7 +5,7 @@ from tqdm import tqdm
 from data import get_dataloader
 
 def grammar_evals(cfg, model, device):
-    dataloader = get_dataloader(cfg.eval, cfg.work_dir, cfg.seed)
+    dataloader = get_dataloader(cfg.lang, cfg.eval, cfg.work_dir, cfg.seed)
     dt = torch.bfloat16 if cfg.train.bf16 else torch.float32
 
     results = {
@@ -20,9 +20,10 @@ def grammar_evals(cfg, model, device):
             classes = _in["labels"].to(device).squeeze()
             B = seqs.shape[0]
             with torch.amp.autocast(device_type=device, dtype=dt):
-                output = model(seqs, classes, mask=masks, return_type="logits")
-                loss = model.loss(output, classes).item()
-                pred = (output > 0).to(device)
+                output = model(seqs, classes, mask=masks, return_type=["logits"])
+                logits = output["logits"]
+                loss = model.loss(logits, classes).item()
+                pred = (logits > 0).to(device)
                 success = (pred == classes).tolist()
                 acc = sum(success)/B if isinstance(success, list) else int(success)
 
@@ -30,3 +31,7 @@ def grammar_evals(cfg, model, device):
             results["accuracy"].append(acc)
 
     return results
+
+
+def intervention_evals(*args):
+    pass

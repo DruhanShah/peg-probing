@@ -1,20 +1,19 @@
 import hydra
 from omegaconf import OmegaConf
 import torch
-from torch import nn
 from tqdm import tqdm
 
 from data import get_dataloader
 from model import TransformerConfig, RecognizerModel
-from evals import grammar_evals
+from model import ProbeConfig, Probe
+from evals import intervention_evals
 
 from utils import init_wandb, set_seed, open_log, cleanup
 from utils import sanity_checks, configure_optimizers
-from utils import save_model, move_to_device
+from utils import save_probe, move_to_device
 from utils import log_train, log_eval, log_debug
 
 FP = None
-
 
 def it_compare(it, interval):
     return (it % interval == 0 and it > 0) if interval > 0 else False
@@ -22,17 +21,18 @@ def it_compare(it, interval):
 
 @hydra.main(config_path=".", config_name="config.yaml", version_base="1.3")
 def main(cfg):
-    init_wandb(cfg, ["train", "eval"])
+    init_wandb(cfg, ["probe"])
     set_seed(cfg.seed)
     FP = open_log(cfg)
 
+    device = cfg.device if torch.cuda.is_available() else "cpu"
     dataloader = get_dataloader(
-        cfg.lang, cfg.data,
+        cfg.lang, cfg.parse,
         cfg.work_dir, cfg.seed,
-        kind="PEG",
+        kind="PS",
     )
-    sanity_checks(cfg, dataloader.dataset.max_len)
 
+    # Load the main model
     model_config = TransformerConfig(
         **OmegaConf.to_object(cfg.model),
         dtype=torch.bfloat16 if cfg.train.bf16 else torch.float32,
@@ -40,58 +40,64 @@ def main(cfg):
         seed=cfg.seed,
     )
     model = RecognizerModel(model_config)
+    model_path = f"{cfg.work_dir}/models/{cfg.lang}/ckpt_{cfg.model.checkpoint}.pt"
+    model_state = torch.load(model_path, weights_only=False)
+    model.load_state_dict(model_state["net"])
 
-    params = pytorch_total_params = sum(p.numel() for p in model.parameters())
-    print(f"No. of parameters: {params/1e6:.2f}M")
+    # Load the probe model
+    probe_config = ProbeConfig(
+        **OmegaConf.to_object(cfg.probe),
+        dtype=torch.bfloat16 if cfg.train.bf16 else torch.float32,
+        seed=cfg.seed,
+    )
+    probe = Probe(probe_config)
 
-    train_model(cfg, model, dataloader)
+    train_probe(cfg, model, probe, dataloader)
     FP = cleanup(cfg, FP)
 
 
-def train_model(cfg, model, dataloader):
-    model.train()
+def train_probe(cfg, model, probe, dataloader):
+    model.eval()
+    probe.train()
 
-    optimizer, scheduler = configure_optimizers(model, cfg.optim)
+    optimizer, scheduler = configure_optimizers(probe, cfg.optim)
 
     device = cfg.device if torch.cuda.is_available() else "cpu"
     dt = torch.bfloat16 if cfg.train.bf16 else torch.float32
     train_loss = {"loss": []}
     it = 0
 
-    print(f"Total training steps: {cfg.train.epochs * len(dataloader)}")
-    print(f"Learning rate warmup steps: {cfg.optim.warmup_steps}")
-
     for e in range(cfg.train.epochs):
         for _in in tqdm(dataloader, desc=f"Epoch {e+1}"):
-            seqs, masks, classes = _in["input_ids"], _in["masks"], _in["labels"]
             it += 1
+            seqs = _in["input_ids"].to(device, dtype=dt)
+            classes = _in["labels"].to(device, dtype=dt)
+            masks = _in["masks"].to(device, dtype=dt)
 
-            optimizer.zero_grad(set_to_none=True)
+            output = model(seqs, mask=masks, return_type=["cache"])
 
-            with torch.amp.autocast(device_type=device, dtype=dt):
-                output = model(
-                    seqs, classes, mask=masks,
-                    return_type=["loss"]
-                )
-                loss = output["loss"]
-                train_loss["loss"].append(loss.item())
+            block0_out = output["cache"]["block_0.mlp"]
+
+            optimizer.zero_grad()
+            output = probe(block0_out, classes, return_type=["loss"])
+            loss = output["loss"]
 
             loss.backward()
-            if cfg.optim.grad_clip > 0:
-                nn.utils.clip_grad_norm_(model.parameters(), cfg.optim.grad_clip)
             optimizer.step()
             scheduler.step()
+
+            train_loss["loss"].append(loss.item())
 
             if it_compare(it, cfg.log.train_interval):
                 lr = optimizer.param_groups[0]["lr"]
                 train_loss = log_train(it, cfg.deploy, lr, train_loss)
             if it_compare(it, cfg.log.eval_interval):
-                model.eval()
-                val_results = grammar_evals(cfg, model, device)
+                probe.eval()
+                val_results = intervention_evals()
                 val_results = log_eval(it, cfg.deploy, val_results)
-                model.train()
+                probe.train()
             if it_compare(it, cfg.log.save_interval):
-                save_model(cfg, model, optimizer, it)
+                save_probe(cfg, probe, optimizer, it, task="ps")
 
 
 if __name__ == "__main__":
