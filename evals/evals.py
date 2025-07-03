@@ -1,11 +1,15 @@
 import torch
-from omegaconf import OmegaConf
 from tqdm import tqdm
 
 from data import get_dataloader
 
-def grammar_evals(cfg, model, device):
-    dataloader = get_dataloader(cfg.lang, cfg.eval, cfg.work_dir, cfg.seed)
+
+def validation(cfg, model, device):
+    dataloader = get_dataloader(
+        cfg.lang, cfg.model_type,
+        cfg.eval,
+        cfg.work_dir, cfg.seed,
+        kind="PEG")
     dt = torch.bfloat16 if cfg.train.bf16 else torch.float32
 
     results = {
@@ -15,17 +19,31 @@ def grammar_evals(cfg, model, device):
     
     with torch.no_grad():
         for i, _in in enumerate(dataloader):
-            seqs = _in["input_ids"].to(device)
+            inputs = _in["inputs"].to(device)
             masks = _in["masks"].to(device)
-            classes = _in["labels"].to(device).squeeze()
-            B = seqs.shape[0]
+            outputs = _in["outputs"].to(device)
+            B = inputs.shape[0]
+
             with torch.amp.autocast(device_type=device, dtype=dt):
-                output = model(seqs, classes, mask=masks, return_type=["logits"])
-                logits = output["logits"]
-                loss = model.loss(logits, classes).item()
-                pred = (logits > 0).to(device)
-                success = (pred == classes).tolist()
-                acc = sum(success)/B if isinstance(success, list) else int(success)
+                # Forward pass through the model
+                _out = model(inputs, outputs, mask=masks,
+                             return_type=["logits", "loss"])
+                logits = _out["logits"].to(device)
+                loss = _out["loss"].item()
+
+                # Get vector of prediction successes
+                pred = (logits.argmax(dim=-1)
+                        if cfg.model_type == "generator"
+                        else logits > 0)
+                success = (pred == outputs).tolist()
+
+                # Calculate accuracy
+                acc = 0
+                for i in range(B):
+                    acc += (sum(success[i])/len(success[i])
+                            if isinstance(success[i], list)
+                            else success[i])
+                acc /= B
 
             results["loss"].append(loss)
             results["accuracy"].append(acc)
@@ -33,5 +51,6 @@ def grammar_evals(cfg, model, device):
     return results
 
 
-def intervention_evals(*args):
+def ps_intervention(*args):
     pass
+

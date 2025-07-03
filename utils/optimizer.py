@@ -52,6 +52,8 @@ def configure_optimizers(net, optim_cfg):
         optimizer,
         schedulers=[warmup, decay],
         milestones=[optim_cfg.warmup_steps],
+    ) if optim_cfg.decay_lr else optim.lr_scheduler.ConstantLR(
+        optimizer, factor=1.0, total_iters=0,
     )
 
     return optimizer, scheduler

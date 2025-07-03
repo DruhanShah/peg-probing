@@ -1,14 +1,15 @@
-deploy: True
+deploy: False
 project_name: "peg-probing"
 seed: 42
 
 lang: "dyck-1"
 work_dir: "../Aux"
 device : "cpu"
+model_type: "generator"
 
 data:
   max_len: 30
-  num_iters: 8192
+  num_samples: 8192
   batch_size: 32
   precomp: True
   save_dir: "data"
@@ -16,7 +17,7 @@ data:
 
 shenanigans:
   max_len: 30
-  num_iters: 10
+  num_samples: 10
   batch_size: 1
   precomp: False
   save_dir: "data"
@@ -24,7 +25,7 @@ shenanigans:
 
 eval:
   max_len: 30
-  num_iters: 5
+  num_samples: 128
   batch_size: 1
   precomp: False
   save_dir: "data"
@@ -32,37 +33,30 @@ eval:
 
 model:
   n_l: 2
-  d_m: 96
+  d_m: 128
   d_h: 32
   n_ctx: 32
+  attn_dir: "causal"
   act_fn: "gelu"
-  act_cache: True
+  act_cache: False
   checkpoint: 5000
 
 train:
-  bf16: False
-  epochs: 15
+  bf16: True
+  epochs: 10
 
 probe:
   d_m: 96
   linear: True
   checkpoint: 1800
 
-parse:
-  max_len: 30
-  num_iters: 128
-  batch_size: 1
-  precomp: False
-  save_dir: "data"
-  num_workers: 0
-
 optim:
-  learning_rate: 2e-2
-  min_lr: 2e-3
+  learning_rate: 3e-2
+  min_lr: 1e-3
   weight_decay: 1e-5
   momentum: 0.9
   grad_clip: 1.0
-  decay_lr: False
+  decay_lr: True
   warmup_steps: 0
   restart_steps: 2000
   decay_factor: 5e-4
@@ -70,9 +64,9 @@ optim:
 
 log: 
   save_multiple: True
-  train_interval: 1
-  eval_interval: 0
-  save_interval: 200
+  train_interval: 50
+  eval_interval: 50
+  save_interval: 500
   free: False
 
 

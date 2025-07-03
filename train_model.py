@@ -5,8 +5,8 @@ from torch import nn
 from tqdm import tqdm
 
 from data import get_dataloader
-from model import TransformerConfig, RecognizerModel
-from evals import grammar_evals
+from model import TransformerConfig, create_model
+from evals import validation
 
 from utils import init_wandb, set_seed, open_log, cleanup
 from utils import sanity_checks, configure_optimizers
@@ -27,11 +27,11 @@ def main(cfg):
     FP = open_log(cfg)
 
     dataloader = get_dataloader(
-        cfg.lang, cfg.data,
+        cfg.lang, cfg.model_type,
+        cfg.data,
         cfg.work_dir, cfg.seed,
         kind="PEG",
     )
-    sanity_checks(cfg, dataloader.dataset.max_len)
 
     model_config = TransformerConfig(
         **OmegaConf.to_object(cfg.model),
@@ -39,7 +39,7 @@ def main(cfg):
         d_vocab=dataloader.dataset.PEG.vocab_size,
         seed=cfg.seed,
     )
-    model = RecognizerModel(model_config)
+    model = create_model(cfg.model_type, model_config)
 
     params = pytorch_total_params = sum(p.numel() for p in model.parameters())
     print(f"No. of parameters: {params/1e6:.2f}M")
@@ -63,14 +63,14 @@ def train_model(cfg, model, dataloader):
 
     for e in range(cfg.train.epochs):
         for _in in tqdm(dataloader, desc=f"Epoch {e+1}"):
-            seqs, masks, classes = _in["input_ids"], _in["masks"], _in["labels"]
+            inputs, masks, outputs = _in["inputs"], _in["masks"], _in["outputs"]
             it += 1
 
             optimizer.zero_grad(set_to_none=True)
 
             with torch.amp.autocast(device_type=device, dtype=dt):
                 output = model(
-                    seqs, classes, mask=masks,
+                    inputs, outputs, mask=masks,
                     return_type=["loss"]
                 )
                 loss = output["loss"]
@@ -87,7 +87,7 @@ def train_model(cfg, model, dataloader):
                 train_loss = log_train(it, cfg.deploy, lr, train_loss)
             if it_compare(it, cfg.log.eval_interval):
                 model.eval()
-                val_results = grammar_evals(cfg, model, device)
+                val_results = validation(cfg, model, device)
                 val_results = log_eval(it, cfg.deploy, val_results)
                 model.train()
             if it_compare(it, cfg.log.save_interval):

@@ -2,27 +2,6 @@ import torch
 import torch.nn as nn
 
 
-class ProbeConfig:
-
-    def __init__(self,
-                 d_m = 512,
-                 d_mlp = 1024,
-                 linear = True,
-                 act_fn = "relu",
-                 dtype = torch.float32,
-                 device = "cpu",
-                 seed = 42,
-                 checkpoint = None
-                 ):
-        self.d_m = d_m
-        self.d_mlp = d_mlp
-        self.linear = linear
-        self.act_fn = act_fn
-        self.dtype = dtype
-        self.device = device
-        self.seed = seed
-
-
 class Probe(nn.Module):
 
     def __init__(self, cfg):

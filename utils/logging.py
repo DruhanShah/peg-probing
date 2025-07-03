@@ -91,14 +91,18 @@ def log_gen(deploy, stats):
     """
 
     fig, ax = plt.subplots()
-    ax.plot(range(len(stats["pos"])), stats["pos"], label="Positive samples")
-    ax.plot(range(len(stats["neg"])), stats["neg"], label="Negative samples")
+
+    if isinstance(stats, dict):
+        ax.plot(range(len(stats["pos"])), stats["pos"], label="Positive samples")
+        ax.plot(range(len(stats["neg"])), stats["neg"], label="Negative samples")
+    else:
+        ax.plot(range(len(stats)), stats, label="Sample lengths")
     if deploy:
         wandb.log({"data": {"lengths": fig}})
     else:
         fig.show()
 
-    stats = {"pos": [], "neg": []}
+    stats = {}
     return stats
 
 

@@ -33,8 +33,10 @@ def main(cfg):
     )
 
     # Load the main model
+    model_path = f"{cfg.work_dir}/models/{cfg.lang}/ckpt_{cfg.model.checkpoint}.pt"
+    model_state = torch.load(model_path, weights_only=False)
     model_config = TransformerConfig(
-        **OmegaConf.to_object(cfg.model),
+        **OmegaConf.to_object(model_state["config"]),
         dtype=torch.bfloat16 if cfg.train.bf16 else torch.float32,
         d_vocab=dataloader.dataset.PEG.vocab_size,
         seed=cfg.seed,

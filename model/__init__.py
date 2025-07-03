@@ -1,2 +1,6 @@
-from .model import RecognizerModel, TransformerConfig
-from .probe import Probe, ProbeConfig
+from .components import (
+    TransformerConfig, ProbeConfig,
+    Attention, MLP, TransformerBlock,
+)
+from .model import create_model
+from .probe import Probe

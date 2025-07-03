@@ -103,7 +103,8 @@ class PEG:
         langfunc = FUNCS[self.language]
 
         positive_string = langfunc(length)
-        assert self.grammar_check(positive_string)
+        assert self.grammar_check(positive_string), \
+            f"Generated string is not valid: {positive_string}"
         return positive_string
 
     def negative_generator(self, length):
@@ -119,6 +120,8 @@ class PEG:
                                 negative_string[idx+1:])
             attempts += 1
         
+        assert not self.grammar_check(negative_string), \
+            f"Generated negative string is valid: {negative_string}"
         return negative_string
 
     def parse_state_generator(self, string):

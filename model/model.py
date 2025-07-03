@@ -1,127 +1,42 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import einops
 from copy import deepcopy as copy
+from abc import ABC, abstractmethod
 from functools import partial
+from einops import rearrange, repeat
+
+from .components import TransformerConfig, TransformerBlock
 
 
-class TransformerConfig:
-
-    def __init__(self,
-                 n_l = 6,
-                 d_m = 512,
-                 n_h = 8,
-                 d_h = None,
-                 d_mlp = None,
-                 d_vocab = 10000,
-                 n_ctx = 512,
-                 attn_only = False,
-                 act_fn="gelu",
-                 act_cache = False,
-                 dtype = torch.float32,
-                 device = "cpu",
-                 seed = 42,
-                 checkpoint = None,
-                 ):
-        self.n_l = n_l
-        self.d_m = d_m
-        self.n_h = n_h
-        self.d_h = d_h if d_h is not None else d_m // n_h
-        self.d_mlp = d_mlp if d_mlp is not None else 4 * d_m
-        self.d_vocab = d_vocab
-        self.n_ctx = n_ctx
-        self.attn_only = attn_only
-        self.act_fn = act_fn
-        self.act_cache = act_cache
-        self.dtype = dtype
-        self.device = device
-        self.seed = seed
-
-
-class Attention(nn.Module):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-        self.W_Q = nn.Linear(cfg.d_m, cfg.n_h * cfg.d_h, bias=False, dtype=cfg.dtype)
-        self.W_K = nn.Linear(cfg.d_m, cfg.n_h * cfg.d_h, bias=False, dtype=cfg.dtype)
-        self.W_V = nn.Linear(cfg.d_m, cfg.n_h * cfg.d_h, bias=False, dtype=cfg.dtype)
-        self.W_O = nn.Linear(cfg.n_h * cfg.d_h, cfg.d_m, bias=False, dtype=cfg.dtype)
-
-        self.scale = 1.0 / (cfg.d_h ** 0.5)
-
-    def forward(self, x, attention_mask=None):
-
-        q = einops.rearrange(self.W_Q(x), "b s (h d) -> b h s d", h=self.cfg.n_h)
-        k = einops.rearrange(self.W_K(x), "b s (h d) -> b h s d", h=self.cfg.n_h)
-        v = einops.rearrange(self.W_V(x), "b s (h d) -> b h s d", h=self.cfg.n_h)
-
-        scores = torch.matmul(q, k.transpose(-2, -1)) * self.scale
-
-        if attention_mask is not None:
-            mask_expanded = einops.repeat(attention_mask, "b s -> b 1 1 s")
-            scores = scores.masked_fill(mask_expanded == 0,
-                                        float("-inf"))
-
-        attn_weights = F.softmax(scores, dim=-1)
-        output_heads = torch.matmul(attn_weights, v)
-
-        output = einops.rearrange(output_heads, "b h s d -> b s (h d)")
-        output = self.W_O(output)
-        return output
-
-
-class MLP(nn.Module):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-        self.fc1 = nn.Linear(cfg.d_m, cfg.d_mlp, dtype=cfg.dtype)
-        self.fc2 = nn.Linear(cfg.d_mlp, cfg.d_m, dtype=cfg.dtype)
-        if cfg.act_fn == "gelu":
-            self.act = F.gelu
-        elif cfg.act_fn == "relu":
-            self.act = F.relu
-        else:
-            raise ValueError(f"Unsupported activation function: {cfg.act_fn}")
-
-    def forward(self, x):
-        return self.fc2(self.act(self.fc1(x)))
-
-
-class EncoderBlock(nn.Module):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-        self.attn = Attention(cfg)
-        self.mlp = MLP(cfg)
-
-        self.ln1 = nn.LayerNorm(cfg.d_m, dtype=cfg.dtype)
-        self.ln2 = nn.LayerNorm(cfg.d_m, dtype=cfg.dtype)
-
-    def forward(self, x, attention_mask=None):
-        x = x + self.attn(self.ln1(x), attention_mask=attention_mask)
-        x = x + self.mlp(self.ln2(x))
-        return x
-
-
-class RecognizerModel(nn.Module):
+class BaseModel(nn.Module, ABC):
+    """Abstract base class for transformer models with activation caching."""
+    
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
 
         self.token_embeddings = nn.Embedding(cfg.d_vocab, cfg.d_m, dtype=cfg.dtype)
         self.pos_embeddings = nn.Embedding(cfg.n_ctx, cfg.d_m, dtype=cfg.dtype)
-        self.transforemr = nn.ModuleList([EncoderBlock(cfg)
+        self.transforemr = nn.ModuleList([TransformerBlock(cfg)
                                           for _ in range(cfg.n_l)])
         self.ln_final = nn.LayerNorm(cfg.d_m, dtype=cfg.dtype)
-        self.classifier = nn.Linear(cfg.d_m, 1, dtype=cfg.dtype)
-
-        self.loss = nn.BCEWithLogitsLoss()
-
+        
+        # Model-specific layers and loss (to be implemented by subclasses)
+        self._init_head_and_loss()
+        
         self.to(cfg.device, dtype=cfg.dtype)
-
+        
+        # Activation caching
         self.activation_cache = {}
         self._hook_handles = []
+
+    @abstractmethod
+    def _init_head_and_loss(self):
+        pass
+
+    @abstractmethod
+    def _compute_output_and_loss(self, x, y, return_type):
+        pass
 
     def _cache_hook(self, name, module, input, output):
         self.activation_cache[name] = output.detach()
@@ -144,7 +59,11 @@ class RecognizerModel(nn.Module):
             add_hook(block.ln1, f"{block_name}.ln1")
             add_hook(block.ln2, f"{block_name}.ln2")
         add_hook(self.ln_final, "ln_final")
-        add_hook(self.classifier, "classifier")
+        self._add_head_hook()
+
+    @abstractmethod
+    def _add_head_hook(self):
+        pass
 
     def _remove_hooks(self):
         for handle in self._hook_handles:
@@ -165,6 +84,7 @@ class RecognizerModel(nn.Module):
         token_embeds = self.token_embeddings(x.to(torch.long))
         position_ids = torch.arange(0, N, dtype=torch.long, device=self.cfg.device)
         pos_embeds = self.pos_embeddings(position_ids).to(self.cfg.dtype)
+        pos_embeds = repeat(pos_embeds, "n d -> b n d", b=B)
 
         x = token_embeds + pos_embeds
         x = x.to(self.cfg.dtype)
@@ -176,19 +96,13 @@ class RecognizerModel(nn.Module):
             x = block(x, attention_mask=mask)
         x = self.ln_final(x)
 
-        pooled_output = x[:, -1, :]
-        logits = self.classifier(pooled_output).squeeze()
+        returnable = self._compute_output_and_loss(x, y, return_type)
+        if "cache" in return_type:
+            returnable["cache"] = self.activation_cache if self.cfg.act_cache else {}
 
         if self.cfg.act_cache:
             self._remove_hooks()
 
-        returnable = {}
-        if "logits" in return_type:
-            returnable["logits"] = logits
-        if "loss" in return_type:
-            returnable["loss"] = self.loss(logits, y.float())
-        if "cache" in return_type:
-            returnable["cache"] = self.activation_cache if self.cfg.act_cache else {}
         return returnable
 
     @property
@@ -207,3 +121,77 @@ class RecognizerModel(nn.Module):
             if module_params:
                 weights[name] = copy(module_params)
         return weights
+
+
+class RecognizerModel(BaseModel):
+    """Binary classification model."""
+    
+    def _init_head_and_loss(self):
+        self.classifier = nn.Linear(self.cfg.d_m, 1, dtype=self.cfg.dtype)
+        self.loss = nn.BCEWithLogitsLoss()
+
+    def _add_head_hook(self):
+        self._hook_handles.append(self.classifier.register_forward_hook(
+            partial(self._cache_hook, "classifier")
+        ))
+
+    def _compute_output_and_loss(self, x, y, return_type):
+        pooled_output = x[:, -1, :]  # Last token pooling
+        logits = self.classifier(pooled_output).squeeze()
+
+        returnable = {}
+        if "logits" in return_type:
+            returnable["logits"] = logits
+        if "loss" in return_type:
+            returnable["loss"] = self.loss(logits, y.float())
+        
+        return returnable
+
+
+class GeneratorModel(BaseModel):
+    """Generative language model."""
+    
+    def _init_head_and_loss(self):
+        self.unembed = nn.Linear(self.cfg.d_m, self.cfg.d_vocab, dtype=self.cfg.dtype)
+        self.loss = nn.CrossEntropyLoss()
+
+    def _add_head_hook(self):
+        self._hook_handles.append(self.unembed.register_forward_hook(
+            partial(self._cache_hook, "unembedding")
+        ))
+
+    def _compute_output_and_loss(self, x, y, return_type):
+        logits = self.unembed(x)
+
+        returnable = {}
+        if "logits" in return_type:
+            returnable["logits"] = logits
+        if "loss" in return_type:
+            logits_flat = rearrange(logits, 'b n v -> (b n) v')
+            y_flat = rearrange(y, 'b n -> (b n)')
+            returnable["loss"] = self.loss(logits_flat, y_flat)
+        
+        return returnable
+
+    def generate(self, x, num_samples=1, temperature=1.0):
+        self.eval()
+        generated = x.clone()
+
+        for _ in range(num_samples):
+            with torch.no_grad():
+                logits = self.forward(generated, return_type=["logits"])["logits"]
+                logits = logits[:, -1, :] / temperature  # Use last position
+                probs = torch.softmax(logits, dim=-1)
+                next_token = torch.multinomial(probs, 1)
+                generated = torch.cat((generated, next_token), dim=1)
+
+        return generated
+
+
+def create_model(model_type, cfg):
+    if model_type == "recognizer":
+        return RecognizerModel(cfg)
+    elif model_type == "generator":
+        return GeneratorModel(cfg)
+    else:
+        raise ValueError(f"Unknown model type: {model_type}. Supported types are 'recognizer' and 'generator'.")
