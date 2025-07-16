@@ -1,11 +1,13 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import einops
+import math
 from copy import deepcopy as copy
 from abc import ABC, abstractmethod
 from functools import partial
-from einops import rearrange, repeat
 
-from .components import TransformerConfig, TransformerBlock
+from .components import TransformerConfig, Block
 
 
 class BaseModel(nn.Module, ABC):
@@ -17,12 +19,13 @@ class BaseModel(nn.Module, ABC):
 
         self.token_embeddings = nn.Embedding(cfg.d_vocab, cfg.d_m, dtype=cfg.dtype)
         self.pos_embeddings = nn.Embedding(cfg.n_ctx, cfg.d_m, dtype=cfg.dtype)
-        self.transforemr = nn.ModuleList([TransformerBlock(cfg)
+        self.transformer = nn.ModuleList([Block(cfg)
                                           for _ in range(cfg.n_l)])
-        self.ln_final = nn.LayerNorm(cfg.d_m, dtype=cfg.dtype)
+        self.ln_final = nn.LayerNorm(cfg.d_m, dtype=cfg.dtype, bias=cfg.bias)
         
         # Model-specific layers and loss (to be implemented by subclasses)
-        self._init_head_and_loss()
+        self.head = self._init_model_head()
+        self.loss = self._init_model_loss()
         
         self.to(cfg.device, dtype=cfg.dtype)
         
@@ -30,12 +33,35 @@ class BaseModel(nn.Module, ABC):
         self.activation_cache = {}
         self._hook_handles = []
 
+        # GPT-2 style initialization
+        self.apply(self._init_weights)
+        for pn, p in self.named_parameters():
+            if pn.endswith('W_O.weight') or pn.endswith('fc2.weight'):
+                torch.nn.init.normal_(p, mean=0.0,
+                                      std=0.02/math.sqrt(2 * self.cfg.n_l))
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
     @abstractmethod
-    def _init_head_and_loss(self):
+    def _init_model_head(self):
         pass
 
     @abstractmethod
-    def _compute_output_and_loss(self, x, y, return_type):
+    def _init_model_loss(self):
+        pass
+
+    @abstractmethod
+    def _compute_loss(self, x, y):
+        pass
+
+    @abstractmethod
+    def _pool(self, x):
         pass
 
     def _cache_hook(self, name, module, input, output):
@@ -51,7 +77,7 @@ class BaseModel(nn.Module, ABC):
 
         add_hook(self.token_embeddings, "token_embeddings")
         add_hook(self.pos_embeddings, "pos_embeddings")
-        for i, block in enumerate(self.transforemr):
+        for i, block in enumerate(self.transformer):
             block_name = f"block_{i}"
             add_hook(block, block_name)
             add_hook(block.attn, f"{block_name}.attn")
@@ -59,11 +85,7 @@ class BaseModel(nn.Module, ABC):
             add_hook(block.ln1, f"{block_name}.ln1")
             add_hook(block.ln2, f"{block_name}.ln2")
         add_hook(self.ln_final, "ln_final")
-        self._add_head_hook()
-
-    @abstractmethod
-    def _add_head_hook(self):
-        pass
+        add_hook(self.head, "head")
 
     def _remove_hooks(self):
         for handle in self._hook_handles:
@@ -74,7 +96,7 @@ class BaseModel(nn.Module, ABC):
         self.activation_cache.clear()
         self._remove_hooks()
 
-    def forward(self, x, y=None, mask=None, return_type=["logits"]):
+    def forward(self, x, y=None, return_type=["logits"]):
         if self.cfg.act_cache:
             self.reset_cache()
             self._register_hooks()
@@ -84,21 +106,26 @@ class BaseModel(nn.Module, ABC):
         token_embeds = self.token_embeddings(x.to(torch.long))
         position_ids = torch.arange(0, N, dtype=torch.long, device=self.cfg.device)
         pos_embeds = self.pos_embeddings(position_ids).to(self.cfg.dtype)
-        pos_embeds = repeat(pos_embeds, "n d -> b n d", b=B)
+        pos_embeds = einops.repeat(pos_embeds, "n d -> b n d", b=B)
 
         x = token_embeds + pos_embeds
-        x = x.to(self.cfg.dtype)
-
-        if mask is None:
-            mask = torch.ones(B, N, dtype=torch.bool, device=self.cfg.device)
-
-        for block in self.transforemr:
-            x = block(x, attention_mask=mask)
+        for block in self.transformer:
+            x = block(x)
         x = self.ln_final(x)
+        x = self._pool(x)
+        logits = self.head(x)
 
-        returnable = self._compute_output_and_loss(x, y, return_type)
+        returnable = {}
+        if "logits" in return_type:
+            returnable["logits"] = logits
+        if "loss" in return_type:
+            returnable["loss"] = (self._compute_loss(logits, y)
+                    if y is not None
+                    else None)
         if "cache" in return_type:
-            returnable["cache"] = self.activation_cache if self.cfg.act_cache else {}
+            returnable["cache"] = (self.activation_cache
+                                   if self.cfg.act_cache
+                                   else {})
 
         if self.cfg.act_cache:
             self._remove_hooks()
@@ -126,52 +153,42 @@ class BaseModel(nn.Module, ABC):
 class RecognizerModel(BaseModel):
     """Binary classification model."""
     
-    def _init_head_and_loss(self):
-        self.classifier = nn.Linear(self.cfg.d_m, 1, dtype=self.cfg.dtype)
-        self.loss = nn.BCEWithLogitsLoss()
+    def _init_model_head(self):
+        return nn.Linear(self.cfg.d_m, 1, dtype=self.cfg.dtype)
 
-    def _add_head_hook(self):
-        self._hook_handles.append(self.classifier.register_forward_hook(
-            partial(self._cache_hook, "classifier")
-        ))
+    def _init_model_loss(self):
+        return F.binary_cross_entropy_with_logits
 
-    def _compute_output_and_loss(self, x, y, return_type):
-        pooled_output = x[:, -1, :]  # Last token pooling
-        logits = self.classifier(pooled_output).squeeze()
+    def _pool(self, x):
+        return x[:, -1, :]  # Last token pooling
 
-        returnable = {}
-        if "logits" in return_type:
-            returnable["logits"] = logits
-        if "loss" in return_type:
-            returnable["loss"] = self.loss(logits, y.float())
-        
-        return returnable
+    def _compute_loss(self, logits, y):
+        loss = self.loss(logits.squeeze(), y.float().squeeze(),
+                         reduction='none')
+        return loss
 
 
 class GeneratorModel(BaseModel):
     """Generative language model."""
     
-    def _init_head_and_loss(self):
-        self.unembed = nn.Linear(self.cfg.d_m, self.cfg.d_vocab, dtype=self.cfg.dtype)
-        self.loss = nn.CrossEntropyLoss()
+    def _init_model_head(self):
+        return nn.Linear(self.cfg.d_m, self.cfg.d_vocab, dtype=self.cfg.dtype)
 
-    def _add_head_hook(self):
-        self._hook_handles.append(self.unembed.register_forward_hook(
-            partial(self._cache_hook, "unembedding")
-        ))
+    def _init_model_loss(self):
+        return F.cross_entropy
 
-    def _compute_output_and_loss(self, x, y, return_type):
-        logits = self.unembed(x)
+    def _pool(self, x):
+        return x
 
-        returnable = {}
-        if "logits" in return_type:
-            returnable["logits"] = logits
-        if "loss" in return_type:
-            logits_flat = rearrange(logits, 'b n v -> (b n) v')
-            y_flat = rearrange(y, 'b n -> (b n)')
-            returnable["loss"] = self.loss(logits_flat, y_flat)
-        
-        return returnable
+    def _compute_loss(self, logits, y):
+        B, N = logits.shape[0], logits.shape[1]
+        logits = einops.rearrange(logits, 'b n v -> (b n) v')
+        y = einops.rearrange(y, 'b n -> (b n)')
+        loss = self.loss(logits, y,
+                         ignore_index=self.cfg.pad_index,
+                         reduction='none')
+        loss = einops.rearrange(loss, '(b n) -> b n', b=B, n=N).mean(dim=1)
+        return loss
 
     def generate(self, x, num_samples=1, temperature=1.0):
         self.eval()
@@ -185,6 +202,7 @@ class GeneratorModel(BaseModel):
                 next_token = torch.multinomial(probs, 1)
                 generated = torch.cat((generated, next_token), dim=1)
 
+        self.train()
         return generated
 
 

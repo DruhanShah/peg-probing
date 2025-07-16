@@ -27,11 +27,6 @@ GRAMMAR = {
         C = "{" T "}" T
         T = S / ""
         """,
-    "triple": """
-        S = &(A "c") ~"a+" B
-        A = "a" A? "b"
-        B = "b" B? "c"
-    """,
     "expr": """
         S = E / D
         E = O S S
@@ -45,7 +40,6 @@ ALPHABET = {
         "dyck-1": list("()"),
         "dyck-2": list("()[]"),
         "dyck-3": list("()[]{}"),
-        "triple": list("abc"),
         "expr": list("0123456789+*^"),
 }
 
@@ -53,16 +47,16 @@ FUNCS = {
     "star": gen_star,
     "dyck-1": gen_dyck_1,
     "dyck-2": gen_dyck_2,
-    "triple": gen_triple,
     "expr": gen_expr,
 }
+SPECIAL_TOKENS = ["<pad>", "<bos>", "<eos>"]
 
 
 class PEG:
 
     def __init__(self, language, max_length=30):
         self.language = language
-        self.alphabet = ["<eos>"] + ALPHABET[language]
+        self.alphabet = SPECIAL_TOKENS + ALPHABET[language]
         self.grammar = Grammar(GRAMMAR[language])
         self.max_length = max_length
 
@@ -75,19 +69,27 @@ class PEG:
             self.valid_lengths = list(range(2, self.max_length+1, 2))
         elif self.language == "dyck-2":
             self.valid_lengths = list(range(2, self.max_length+1, 2))
-        elif self.language == "triple":
-            self.valid_lengths = list(range(3, self.max_length+1, 3))
         elif self.language == "expr":
             self.valid_lengths = list(range(1, self.max_length+1, 2))
+        self.length_weights = [(1) for i in range(len(self.valid_lengths))]
 
     def tokenize_string(self, string):
-        tokens = list(string) + ["<eos>"]
+        tokens = ["<bos>"] + list(string) + ["<eos>"]
         token_indices = [self.stoi[token] for token in tokens]
         return token_indices
 
-    def detokenize_string(self, token_indices):
-        tokens = [self.itos[token] for token in token_indices.tolist()]
-        return "".join(tokens)
+    def detokenize_string(self, token_indices, clean=False):
+        tokens = []
+        start = -1
+        end = -1
+        for i, idx in enumerate(token_indices):
+            token = self.itos[idx]
+            tokens.append(token)
+            if token == "<bos>" and start == -1:
+                start = i
+            elif token in ["<eos>", "<pad>"] and end == -1:
+                end = i
+        return "".join(tokens[start+1:end] if clean else tokens)
 
     def grammar_check(self, string):
         try:
@@ -108,17 +110,14 @@ class PEG:
         return positive_string
 
     def negative_generator(self, length):
-        alphabet = [i for i in self.alphabet if i not in ["<eos>"]]
+        alphabet = [i for i in self.alphabet if i not in SPECIAL_TOKENS]
         negative_string = ''.join(random.choices(alphabet, k=length))
         
-        max_attempts = 40
-        attempts = 0
-        while self.grammar_check(negative_string) and attempts < max_attempts:
+        while self.grammar_check(negative_string):
             idx = random.randint(0, len(negative_string) - 1)
             negative_string = (negative_string[:idx] + 
                                 random.choice(alphabet) + 
                                 negative_string[idx+1:])
-            attempts += 1
         
         assert not self.grammar_check(negative_string), \
             f"Generated negative string is valid: {negative_string}"

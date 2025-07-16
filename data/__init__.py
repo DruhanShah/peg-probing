@@ -1,3 +1,4 @@
+from .PEG import PEG
 from .train_dataset import create_train_dataset
 from .probe_dataset import PSDataset
 from .dataloader import get_dataloader

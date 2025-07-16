@@ -22,6 +22,8 @@ def it_compare(it, interval):
 
 @hydra.main(config_path=".", config_name="config.yaml", version_base="1.3")
 def main(cfg):
+    global FP
+
     init_wandb(cfg, ["train", "eval"])
     set_seed(cfg.seed)
     FP = open_log(cfg)
@@ -37,6 +39,7 @@ def main(cfg):
         **OmegaConf.to_object(cfg.model),
         dtype=torch.bfloat16 if cfg.train.bf16 else torch.float32,
         d_vocab=dataloader.dataset.PEG.vocab_size,
+        pad_index=dataloader.dataset.pad_token_id,
         seed=cfg.seed,
     )
     model = create_model(cfg.model_type, model_config)
@@ -49,6 +52,7 @@ def main(cfg):
 
 
 def train_model(cfg, model, dataloader):
+    global FP
     model.train()
 
     optimizer, scheduler = configure_optimizers(model, cfg.optim)
@@ -63,17 +67,17 @@ def train_model(cfg, model, dataloader):
 
     for e in range(cfg.train.epochs):
         for _in in tqdm(dataloader, desc=f"Epoch {e+1}"):
-            inputs, masks, outputs = _in["inputs"], _in["masks"], _in["outputs"]
+            inputs, outputs = _in["inputs"], _in["outputs"]
             it += 1
 
             optimizer.zero_grad(set_to_none=True)
 
             with torch.amp.autocast(device_type=device, dtype=dt):
                 output = model(
-                    inputs, outputs, mask=masks,
+                    inputs, outputs,
                     return_type=["loss"]
                 )
-                loss = output["loss"]
+                loss = output["loss"].mean()
                 train_loss["loss"].append(loss.item())
 
             loss.backward()
@@ -87,7 +91,9 @@ def train_model(cfg, model, dataloader):
                 train_loss = log_train(it, cfg.deploy, lr, train_loss)
             if it_compare(it, cfg.log.eval_interval):
                 model.eval()
-                val_results = validation(cfg, model, device)
+                val_results, debug_info = validation(cfg, model, device)
+                if cfg.log.debug:
+                    log_debug(it, FP, debug_info)
                 val_results = log_eval(it, cfg.deploy, val_results)
                 model.train()
             if it_compare(it, cfg.log.save_interval):

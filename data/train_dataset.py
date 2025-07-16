@@ -4,6 +4,7 @@ from torch.utils.data import Dataset
 import numpy as np
 import pickle as pkl
 import random
+from tqdm import tqdm
 from abc import ABC, abstractmethod
 
 from .PEG import PEG
@@ -24,7 +25,7 @@ class TrainDataset(Dataset, ABC):
         self.seed = seed
         
         self.PEG = PEG(language, max_length=max_len)
-        self.pad_token = "<eos>"
+        self.pad_token = "<pad>"
         self.pad_token_id = self.PEG.stoi[self.pad_token]
         
         self.data = []
@@ -35,31 +36,10 @@ class TrainDataset(Dataset, ABC):
     def generate_data(self):
         pass
     
-    def save_data(self, path_to_results):
-        base_dir = os.path.join(path_to_results, "data")
-        os.makedirs(base_dir, exist_ok=True)
-        
-        # Determine filename based on dataset type
-        dataset_type = "binary" if hasattr(self, '_is_binary') else "string"
-        data_path = os.path.join(base_dir, f"{self.language}_{dataset_type}.pkl")
-        
-        save_dict = {
-            "data": self.data,
-            "labels": self.labels,
-            "language": self.language,
-            "max_len": self.max_len,
-            "seed": self.seed
-        }
-        
-        with open(data_path, "wb") as f:
-            pkl.dump(save_dict, f)
-        
-        return self._compute_length_stats()
-    
     def load_data(self, path_to_results):
         base_dir = os.path.join(path_to_results, "data")
-        dataset_type = "binary" if hasattr(self, '_is_binary') else "string"
-        data_path = os.path.join(base_dir, f"{self.language}_{dataset_type}.pkl")
+        dataset_type = "recognizer" if hasattr(self, '_is_binary') else "generator"
+        data_path = os.path.join(base_dir, dataset_type, self.language, "dataset.pkl")
         
         with open(data_path, "rb") as f:
             saved_data = pkl.load(f)
@@ -67,7 +47,7 @@ class TrainDataset(Dataset, ABC):
             self.labels = saved_data["labels"]
             self._generated = True
     
-    def _compute_length_stats(self):
+    def length_stats(self):
         if hasattr(self, '_is_binary'):
             lengths = {
                 "pos": [0] * (self.max_len + 1),
@@ -101,7 +81,7 @@ class RecognizerDataset(TrainDataset):
         self.pos_ratio = pos_ratio
         self._is_binary = True
     
-    def generate_data(self):
+    def generate_data(self, quiet=False):
         if self._generated:
             return
             
@@ -109,15 +89,22 @@ class RecognizerDataset(TrainDataset):
         num_negative = self.num_samples - num_positive
         
         # Generate positive samples
-        for _ in range(num_positive):
-            target_length = random.choice(self.PEG.valid_lengths)
+        for _ in tqdm(range(num_positive),
+                      desc="Generating positive samples",
+                      disable=quiet):
+            target_length = random.choices(
+                self.PEG.valid_lengths,
+                weights = self.PEG.length_weights,
+            )[0]
             sequence = self.PEG.positive_generator(target_length)
             self.data.append(sequence)
             self.labels.append(1)
         
         # Generate negative samples
-        for _ in range(num_negative):
-            target_length = random.randint(1, self.max_len)
+        for _ in tqdm(range(num_negative),
+                      desc="Generating negative samples",
+                      disable=quiet):
+            target_length = random.randint(2, self.max_len)
             sequence = self.PEG.negative_generator(target_length)
             self.data.append(sequence)
             self.labels.append(0)
@@ -151,26 +138,17 @@ class RecognizerDataset(TrainDataset):
         max_len = max(len(seq) for seq in sequences)
         
         padded_sequences = []
-        attention_masks = []
         
         for seq in sequences:
             padded_seq = torch.cat([
                 seq,
                 torch.full((max_len - len(seq),), self.pad_token_id, dtype=torch.long)
             ])
-            
-            attention_mask = torch.cat([
-                torch.ones(len(seq), dtype=torch.long),
-                torch.zeros(max_len - len(seq), dtype=torch.long)
-            ])
-            
             padded_sequences.append(padded_seq)
-            attention_masks.append(attention_mask)
         
         return {
-            'input': torch.stack(padded_sequences),
-            'output': torch.stack(list(labels)),
-            'attention_mask': torch.stack(attention_masks)
+            'inputs': torch.stack(padded_sequences),
+            'outputs': torch.stack(list(labels)),
         }
 
 
@@ -182,20 +160,23 @@ class GeneratorDataset(TrainDataset):
                  num_samples,
                  max_len, 
                  seed = 42,
-                 pos_only = True,
-                 pos_ratio = 0.8,
+                 pos_ratio = 1.0,
                  **kwargs):
         super().__init__(language, num_samples, max_len, seed, **kwargs)
-        self.pos_only = pos_only
-        self.pos_ratio = pos_ratio if not pos_only else 1.0
+        self.pos_ratio = pos_ratio
     
-    def generate_data(self):
+    def generate_data(self, quiet=False):
         if self._generated:
             return
             
-        if self.pos_only:
-            for _ in range(self.num_samples):
-                target_length = random.choice(self.PEG.valid_lengths)
+        if self.pos_ratio == 1.0:
+            for _ in tqdm(range(self.num_samples),
+                          desc="Generating positive samples",
+                          disable=quiet):
+                target_length = random.choices(
+                    self.PEG.valid_lengths,
+                    weights = self.PEG.length_weights,
+                )[0]
                 sequence = self.PEG.positive_generator(target_length)
                 self.data.append(sequence)
                 self.labels.append(1)
@@ -204,15 +185,22 @@ class GeneratorDataset(TrainDataset):
             num_negative = self.num_samples - num_positive
             
             # Generate positive samples
-            for _ in range(num_positive):
-                target_length = random.choice(self.PEG.valid_lengths)
+            for _ in tqdm(range(num_positive),
+                          desc="Generating positive samples",
+                          disable=quiet):
+                target_length = random.choices(
+                    self.PEG.valid_lengths,
+                    weights = self.PEG.length_weights,
+                )[0]
                 sequence = self.PEG.positive_generator(target_length)
                 self.data.append(sequence)
                 self.labels.append(1)
             
             # Generate negative samples
-            for _ in range(num_negative):
-                target_length = random.randint(1, self.max_len)
+            for _ in tqdm(range(num_negative),
+                          desc="Generating negative samples",
+                          disable=quiet):
+                target_length = random.randint(2, self.max_len)
                 sequence = self.PEG.negative_generator(target_length)
                 self.data.append(sequence)
                 self.labels.append(0)
@@ -254,7 +242,6 @@ class GeneratorDataset(TrainDataset):
         
         padded_inputs = []
         padded_targets = []
-        attention_masks = []
         
         for inp, tgt in zip(inputs, targets):
             inp_padded = torch.cat([
@@ -267,19 +254,12 @@ class GeneratorDataset(TrainDataset):
                 torch.full((max_len - len(tgt),), self.pad_token_id, dtype=torch.long)
             ])
             
-            attention_mask = torch.cat([
-                torch.ones(len(inp), dtype=torch.long),
-                torch.zeros(max_len - len(inp), dtype=torch.long)
-            ])
-            
             padded_inputs.append(inp_padded)
             padded_targets.append(tgt_padded)
-            attention_masks.append(attention_mask)
         
         return {
             'inputs': torch.stack(padded_inputs),
             'outputs': torch.stack(padded_targets),
-            'masks': torch.stack(attention_masks)
         }
 
 

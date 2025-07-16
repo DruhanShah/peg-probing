@@ -4,6 +4,7 @@ import numpy as np
 import random
 import os
 import warnings
+import pickle as pkl
 import matplotlib.pyplot as plt
 from omegaconf import OmegaConf
 
@@ -14,7 +15,7 @@ def sanity_checks(cfg, max_len):
     """
 
     assert(cfg.model.n_ctx >= max_len)
-    assert(cfg.model.d_m% cfg.model.d_h == 0)
+    assert(cfg.model.d_m % cfg.model.d_h == 0)
 
     if not torch.cuda.is_available():
         warnings.warn("WARNING: running on CPU", UserWarning)
@@ -71,13 +72,11 @@ def cleanup(cfg, fp):
     return None
 
 
-def log_debug(it, fp, deploy, debug_info):
+def log_debug(it, fp, debug_info):
         """
         Log debug information
         """
 
-        log_file = fp
-        
         print(f"Debug info at iteration {it}:\n{debug_info}", file=fp)
         print("", file=fp)
 
@@ -100,7 +99,7 @@ def log_gen(deploy, stats):
     if deploy:
         wandb.log({"data": {"lengths": fig}})
     else:
-        fig.show()
+        plt.show()
 
     stats = {}
     return stats
@@ -136,25 +135,43 @@ def log_eval(it, deploy, eval_results):
     return eval_results
 
 
+def save_data(cfg, dataset):
+    """
+    Save dataset to file
+    """
+    fdir = f"{cfg.work_dir}/data/{cfg.model_type}/{cfg.lang}"
+    os.makedirs(fdir, exist_ok=True)
+    fname = os.path.join(fdir, "dataset.pkl")
+    save_dict = {
+        "data": dataset.data,
+        "labels": dataset.labels,
+        "language": dataset.language,
+        "max_len": dataset.max_len,
+        "seed": dataset.seed
+    }
+        
+    with open(fname, "wb") as f:
+        pkl.dump(save_dict, f)
+        
+
+
 def save_model(cfg, net, optimizer, it):
     """
     Save model checkpoint
     """
-
-    if cfg.deploy:
-        checkpoint = {
-            "net": net.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "iter": it,
-            "config": cfg,
-        }
-        fdir = cfg.work_dir + "/models/" + cfg.lang
-        os.makedirs(fdir, exist_ok=True)
-        if cfg.log.save_multiple:
-            fname = os.path.join(fdir, f"ckpt_{it}.pt")
-        else:
-            fname = os.path.join(fdir, "latest_ckpt.pt")
-        torch.save(checkpoint, fname)
+    checkpoint = {
+        "net": net.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "iter": it,
+        "config": cfg,
+    }
+    fdir = f"{cfg.work_dir}/models/{cfg.model_type}/{cfg.lang}"
+    os.makedirs(fdir, exist_ok=True)
+    if cfg.log.save_multiple:
+        fname = os.path.join(fdir, f"ckpt_{it}.pt")
+    else:
+        fname = os.path.join(fdir, "latest_ckpt.pt")
+    torch.save(checkpoint, fname)
 
 
 def save_probe(cfg, probe, optimizer, it, task="probe"):
@@ -169,7 +186,7 @@ def save_probe(cfg, probe, optimizer, it, task="probe"):
             "iter": it,
             "config": cfg,
         }
-        fdir = cfg.work_dir + "/probes/" + cfg.lang
+        fdir = f"{cfg.work_dir}/probes/{cfg.model_type}/{cfg.lang}"
         os.makedirs(fdir, exist_ok=True)
         if cfg.log.save_multiple:
             fname = os.path.join(fdir, f"{task}_{it}.pt")

@@ -2,64 +2,52 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import einops
+from dataclasses import dataclass
 
 
 # Configuration dataclasses
 
+@dataclass
 class TransformerConfig:
+    n_l: int = 6
+    d_m: int = 512
+    n_h: int = 8
+    d_h: int = None
+    d_mlp: int = None
+    d_vocab: int = 10000
+    n_ctx: int = 512
+    dropout: float = 0.1
+    bias: bool = True
+    attn_only: bool = False
+    attn_dir: str = "bidirectional"
+    act_fn: str = "gelu"
+    act_cache: bool = False
+    pad_index: int = 0
+    dtype: type = torch.float32
+    device: str = "cpu"
+    seed: int = 42
+    checkpoint: int = None
 
-    def __init__(self,
-                 n_l = 6,
-                 d_m = 512,
-                 n_h = 8,
-                 d_h = None,
-                 d_mlp = None,
-                 d_vocab = 10000,
-                 n_ctx = 512,
-                 attn_only = False,
-                 attn_dir = "bidirectional",
-                 act_fn="gelu",
-                 act_cache = False,
-                 dtype = torch.float32,
-                 device = "cpu",
-                 seed = 42,
-                 checkpoint = None,
-                 ):
-        self.n_l = n_l
-        self.d_m = d_m
-        self.n_h = n_h
-        self.d_h = d_h if d_h is not None else d_m // n_h
-        self.d_mlp = d_mlp if d_mlp is not None else 4 * d_m
-        self.d_vocab = d_vocab
-        self.n_ctx = n_ctx
-        self.attn_only = attn_only
-        self.attn_dir = attn_dir
-        self.act_fn = act_fn
-        self.act_cache = act_cache
-        self.dtype = dtype
-        self.device = device
-        self.seed = seed
+    def __post_init__(self):
+        self.d_h = self.d_h if self.d_h is not None else self.d_m // self.n_h
+        self.d_mlp = self.d_mlp if self.d_mlp is not None else 4 * self.d_m
+
+        if self.attn_dir not in ["bidirectional", "causal"]:
+            raise ValueError(f"Unsupported attention direction: {self.attn_dir}")
+        if self.d_h * self.n_h != self.d_m:
+            raise ValueError("d_m must be divisible by n_h for multi-head attention.")
 
 
+@dataclass
 class ProbeConfig:
-
-    def __init__(self,
-                 d_m = 512,
-                 d_mlp = 1024,
-                 linear = True,
-                 act_fn = "relu",
-                 dtype = torch.float32,
-                 device = "cpu",
-                 seed = 42,
-                 checkpoint = None
-                 ):
-        self.d_m = d_m
-        self.d_mlp = d_mlp
-        self.linear = linear
-        self.act_fn = act_fn
-        self.dtype = dtype
-        self.device = device
-        self.seed = seed
+    d_m: int = 512,
+    d_mlp: int = 1024,
+    linear: bool = True,
+    act_fn: str = "relu",
+    dtype: type = torch.float32,
+    device: str = "cpu",
+    seed: int = 42,
+    checkpoint: int = None
 
 
 # Actual model components
@@ -68,40 +56,23 @@ class Attention(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.W_Q = nn.Linear(cfg.d_m, cfg.n_h * cfg.d_h, bias=False, dtype=cfg.dtype)
-        self.W_K = nn.Linear(cfg.d_m, cfg.n_h * cfg.d_h, bias=False, dtype=cfg.dtype)
-        self.W_V = nn.Linear(cfg.d_m, cfg.n_h * cfg.d_h, bias=False, dtype=cfg.dtype)
-        self.W_O = nn.Linear(cfg.n_h * cfg.d_h, cfg.d_m, bias=False, dtype=cfg.dtype)
+        self.W_QKV = nn.Linear(cfg.d_m, 3 * cfg.d_m, bias=cfg.bias, dtype=cfg.dtype)
+        self.W_O = nn.Linear(cfg.d_m, cfg.d_m, bias=cfg.bias, dtype=cfg.dtype)
 
-        self.scale = 1.0 / (cfg.d_h ** 0.5)
+    def forward(self, x):
 
-        if cfg.attn_dir == "causal":
-            causal_mask = torch.tril(torch.ones(cfg.n_ctx, cfg.n_ctx, dtype=cfg.dtype))
-            self.register_buffer("causal_mask", causal_mask)
+        q, k, v = self.W_QKV(x).split(self.cfg.d_m, dim=2)
+        q = einops.rearrange(q, "b s (h d) -> b h s d", h=self.cfg.n_h)
+        k = einops.rearrange(k, "b s (h d) -> b h s d", h=self.cfg.n_h)
+        v = einops.rearrange(v, "b s (h d) -> b h s d", h=self.cfg.n_h)
 
-    def forward(self, x, attention_mask=None):
+        attention = F.scaled_dot_product_attention(
+            q, k, v,
+            dropout_p=self.cfg.dropout,
+            is_causal=(self.cfg.attn_dir == "causal"),
+        )
 
-        q = einops.rearrange(self.W_Q(x), "b s (h d) -> b h s d", h=self.cfg.n_h)
-        k = einops.rearrange(self.W_K(x), "b s (h d) -> b h s d", h=self.cfg.n_h)
-        v = einops.rearrange(self.W_V(x), "b s (h d) -> b h s d", h=self.cfg.n_h)
-
-        scores = torch.matmul(q, k.transpose(-2, -1)) * self.scale
-
-        if attention_mask is not None:
-            mask_expanded = einops.repeat(attention_mask, "b s -> b 1 1 s")
-            scores = scores.masked_fill(mask_expanded == 0, float("-inf"))
-
-        if self.cfg.attn_dir == "causal":
-            seq_len = scores.size(2)
-            causal_mask = self.causal_mask[:seq_len, :seq_len]
-            causal_mask = einops.repeat(causal_mask, "l m -> b h l m",
-                                        b=scores.size(0), h=scores.size(1))
-            scores = scores.masked_fill(causal_mask == 0, float("-inf"))
-
-        attn_weights = F.softmax(scores, dim=-1)
-        output_heads = torch.matmul(attn_weights, v)
-
-        output = einops.rearrange(output_heads, "b h s d -> b s (h d)")
+        output = einops.rearrange(attention, "b h s d -> b s (h d)")
         output = self.W_O(output)
         return output
 
@@ -123,17 +94,17 @@ class MLP(nn.Module):
         return self.fc2(self.act(self.fc1(x)))
 
 
-class TransformerBlock(nn.Module):
+class Block(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+
         self.attn = Attention(cfg)
         self.mlp = MLP(cfg)
+        self.ln1 = nn.LayerNorm(cfg.d_m, bias=cfg.bias, dtype=cfg.dtype)
+        self.ln2 = nn.LayerNorm(cfg.d_m, bias=cfg.bias, dtype=cfg.dtype)
 
-        self.ln1 = nn.LayerNorm(cfg.d_m, dtype=cfg.dtype)
-        self.ln2 = nn.LayerNorm(cfg.d_m, dtype=cfg.dtype)
-
-    def forward(self, x, attention_mask=None):
-        x = x + self.attn(self.ln1(x), attention_mask=attention_mask)
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
         x = x + self.mlp(self.ln2(x))
         return x

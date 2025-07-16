@@ -6,20 +6,21 @@ from .train_dataset import create_train_dataset
 from .probe_dataset import PSDataset
 
 
-def get_dataloader(lang, task, cfg, work_dir, seed=42, kind="PEG"):
+def get_dataloader(lang, task, cfg, work_dir, seed=42, kind="PEG", quiet=False):
     if kind == "PEG":
-        dataset = create_train_dataset(
-            type=task,
-            language=lang,
-            **OmegaConf.to_object(cfg),
-            seed=seed)
+        dataset = create_train_dataset(type=task,
+                                       language=lang,
+                                       **OmegaConf.to_object(cfg),
+                                       seed=seed)
     elif kind == "PS":
-        dataset = PSDataset(language=lang, **OmegaConf.to_object(cfg), seed=seed)
+        dataset = PSDataset(language=lang,
+                            **OmegaConf.to_object(cfg),
+                            seed=seed)
 
     if cfg.precomp:
         dataset.load_data(work_dir)
     else:
-        dataset.generate_data()
+        dataset.generate_data(quiet=quiet)
 
     dataloader = DataLoader(
         dataset,
