@@ -196,7 +196,8 @@ class GeneratorModel(BaseModel):
 
         for _ in range(num_samples):
             with torch.no_grad():
-                logits = self.forward(generated, return_type=["logits"])["logits"]
+                logits = self.forward(generated, return_type=["logits"])
+                logits = logits["logits"]
                 logits = logits[:, -1, :] / temperature  # Use last position
                 probs = torch.softmax(logits, dim=-1)
                 next_token = torch.multinomial(probs, 1)

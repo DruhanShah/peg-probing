@@ -9,69 +9,6 @@ import matplotlib.pyplot as plt
 from omegaconf import OmegaConf
 
 
-def sanity_checks(cfg, max_len):
-    """
-    Basic sanity checks for model configuration and data compatibility
-    """
-
-    assert(cfg.model.n_ctx >= max_len)
-    assert(cfg.model.d_m % cfg.model.d_h == 0)
-
-    if not torch.cuda.is_available():
-        warnings.warn("WARNING: running on CPU", UserWarning)
-    elif not torch.cuda.is_bf16_supported():
-        warnings.warn("WARNING: running without BF16", UserWarning)
-
-
-def set_seed(seed=0):
-    """
-    Don't set true seed to be nearby values. Doesn't give best randomness
-    """
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
-def open_log(cfg):
-    """
-    Open log file but don't redirect stdout and stderr to it
-    """
-
-    os.makedirs(cfg.work_dir + "/logs/", exist_ok=True)
-    return open(f"{cfg.work_dir}/logs/{cfg.lang}.log", "w")
-
-
-def init_wandb(cfg, tags=None):
-    """
-    Initialize wandb
-    """
-
-    if cfg.deploy:
-        wandb.init(
-            project=cfg.project_name,
-            tags=tags,
-        )
-        wandb.run.name = wandb.run.id
-        wandb.run.save()
-        wandb.config.update(OmegaConf.to_container(cfg))
-
-
-def cleanup(cfg, fp):
-    """
-    Close log file and wandb
-    """
-
-    if fp is not None:
-        fp.close()
-    if cfg.deploy:
-        wandb.finish()
-    return None
-
-
 def log_debug(it, fp, debug_info):
         """
         Log debug information
@@ -105,7 +42,7 @@ def log_gen(deploy, stats):
     return stats
 
 
-def log_train(it, deploy, lr, train_loss):
+def log_train(deploy, lr, train_loss):
     """
     Log training loss information
     """
@@ -120,7 +57,7 @@ def log_train(it, deploy, lr, train_loss):
     return train_loss
 
 
-def log_eval(it, deploy, eval_results):
+def log_eval(deploy, eval_results):
     """
     Log eval information
     """
@@ -133,63 +70,3 @@ def log_eval(it, deploy, eval_results):
 
     eval_results = {"accuracy": [], "loss": []}
     return eval_results
-
-
-def save_data(cfg, dataset):
-    """
-    Save dataset to file
-    """
-    fdir = f"{cfg.work_dir}/data/{cfg.model_type}/{cfg.lang}"
-    os.makedirs(fdir, exist_ok=True)
-    fname = os.path.join(fdir, "dataset.pkl")
-    save_dict = {
-        "data": dataset.data,
-        "labels": dataset.labels,
-        "language": dataset.language,
-        "max_len": dataset.max_len,
-        "seed": dataset.seed
-    }
-        
-    with open(fname, "wb") as f:
-        pkl.dump(save_dict, f)
-        
-
-
-def save_model(cfg, net, optimizer, it):
-    """
-    Save model checkpoint
-    """
-    checkpoint = {
-        "net": net.state_dict(),
-        "optimizer": optimizer.state_dict(),
-        "iter": it,
-        "config": cfg,
-    }
-    fdir = f"{cfg.work_dir}/models/{cfg.model_type}/{cfg.lang}"
-    os.makedirs(fdir, exist_ok=True)
-    if cfg.log.save_multiple:
-        fname = os.path.join(fdir, f"ckpt_{it}.pt")
-    else:
-        fname = os.path.join(fdir, "latest_ckpt.pt")
-    torch.save(checkpoint, fname)
-
-
-def save_probe(cfg, probe, optimizer, it, task="probe"):
-    """
-    Save probe checkpoint
-    """
-
-    if cfg.deploy:
-        checkpoint = {
-            "net": probe.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "iter": it,
-            "config": cfg,
-        }
-        fdir = f"{cfg.work_dir}/probes/{cfg.model_type}/{cfg.lang}"
-        os.makedirs(fdir, exist_ok=True)
-        if cfg.log.save_multiple:
-            fname = os.path.join(fdir, f"{task}_{it}.pt")
-        else:
-            fname = os.path.join(fdir, "latest_ps.pt")
-        torch.save(checkpoint, fname)

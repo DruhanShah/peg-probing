@@ -15,12 +15,12 @@ class TrainDataset(Dataset, ABC):
     
     def __init__(self,
                  language,
-                 num_samples,
+                 num_iters,
                  max_len, 
                  seed = 42,
                  **kwargs):
         self.language = language
-        self.num_samples = num_samples
+        self.num_iters = num_iters
         self.max_len = max_len
         self.seed = seed
         
@@ -64,7 +64,7 @@ class TrainDataset(Dataset, ABC):
             return lengths
     
     def __len__(self):
-        return len(self.data) if self._generated else self.num_samples
+        return len(self.data) if self._generated else self.num_iters
 
 
 class RecognizerDataset(TrainDataset):
@@ -72,12 +72,12 @@ class RecognizerDataset(TrainDataset):
     
     def __init__(self,
                  language,
-                 num_samples,
+                 num_iters,
                  max_len, 
                  seed = 42,
                  pos_ratio = 0.5,
                  **kwargs):
-        super().__init__(language, num_samples, max_len, seed, **kwargs)
+        super().__init__(language, num_iters, max_len, seed, **kwargs)
         self.pos_ratio = pos_ratio
         self._is_binary = True
     
@@ -85,8 +85,8 @@ class RecognizerDataset(TrainDataset):
         if self._generated:
             return
             
-        num_positive = int(self.num_samples * self.pos_ratio)
-        num_negative = self.num_samples - num_positive
+        num_positive = int(self.num_iters * self.pos_ratio)
+        num_negative = self.num_iters - num_positive
         
         # Generate positive samples
         for _ in tqdm(range(num_positive),
@@ -157,12 +157,12 @@ class GeneratorDataset(TrainDataset):
     
     def __init__(self,
                  language,
-                 num_samples,
+                 num_iters,
                  max_len, 
                  seed = 42,
                  pos_ratio = 1.0,
                  **kwargs):
-        super().__init__(language, num_samples, max_len, seed, **kwargs)
+        super().__init__(language, num_iters, max_len, seed, **kwargs)
         self.pos_ratio = pos_ratio
     
     def generate_data(self, quiet=False):
@@ -170,7 +170,7 @@ class GeneratorDataset(TrainDataset):
             return
             
         if self.pos_ratio == 1.0:
-            for _ in tqdm(range(self.num_samples),
+            for _ in tqdm(range(self.num_iters),
                           desc="Generating positive samples",
                           disable=quiet):
                 target_length = random.choices(
@@ -181,8 +181,8 @@ class GeneratorDataset(TrainDataset):
                 self.data.append(sequence)
                 self.labels.append(1)
         else:
-            num_positive = int(self.num_samples * self.pos_ratio)
-            num_negative = self.num_samples - num_positive
+            num_positive = int(self.num_iters * self.pos_ratio)
+            num_negative = self.num_iters - num_positive
             
             # Generate positive samples
             for _ in tqdm(range(num_positive),
@@ -244,16 +244,15 @@ class GeneratorDataset(TrainDataset):
         padded_targets = []
         
         for inp, tgt in zip(inputs, targets):
-            inp_padded = torch.cat([
-                inp, 
-                torch.full((max_len - len(inp),), self.pad_token_id, dtype=torch.long)
-            ])
-            
-            tgt_padded = torch.cat([
-                tgt,
-                torch.full((max_len - len(tgt),), self.pad_token_id, dtype=torch.long)
-            ])
-            
+            pad_len_inp = max_len - len(inp)
+            pad_len_tgt = max_len - len(tgt)
+            padded_sequence = torch.cat(
+                [inp, torch.tensor([self.pad_token_id] * pad_len_inp)]
+            )
+            padded_target = torch.cat(
+                [tgt, torch.tensor([self.pad_token_id] * pad_len_tgt)]
+            )
+
             padded_inputs.append(inp_padded)
             padded_targets.append(tgt_padded)
         

@@ -49,6 +49,9 @@ class ProbeConfig:
     seed: int = 42,
     checkpoint: int = None
 
+    def __post_init__(self):
+        self.d_mlp = self.d_mlp if self.d_mlp is not None else 4 * self.d_m
+
 
 # Actual model components
 
@@ -66,11 +69,10 @@ class Attention(nn.Module):
         k = einops.rearrange(k, "b s (h d) -> b h s d", h=self.cfg.n_h)
         v = einops.rearrange(v, "b s (h d) -> b h s d", h=self.cfg.n_h)
 
-        attention = F.scaled_dot_product_attention(
-            q, k, v,
-            dropout_p=self.cfg.dropout,
-            is_causal=(self.cfg.attn_dir == "causal"),
-        )
+        causal = self.cfg.attn_dir == "causal"
+        attention = F.scaled_dot_product_attention(q, k, v,
+                                                   dropout_p=self.cfg.dropout,
+                                                   is_causal=causal)
 
         output = einops.rearrange(attention, "b h s d -> b s (h d)")
         output = self.W_O(output)

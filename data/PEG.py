@@ -71,7 +71,7 @@ class PEG:
             self.valid_lengths = list(range(2, self.max_length+1, 2))
         elif self.language == "expr":
             self.valid_lengths = list(range(1, self.max_length+1, 2))
-        self.length_weights = [(1) for i in range(len(self.valid_lengths))]
+        self.length_weights = [(i+1) for i in range(len(self.valid_lengths))]
 
     def tokenize_string(self, string):
         tokens = ["<bos>"] + list(string) + ["<eos>"]
@@ -124,9 +124,22 @@ class PEG:
         return negative_string
 
     def parse_state_generator(self, string):
-        state = []
-        for i in range(len(string)):
-            state.append(self.grammar_check(string[:i+1]))
-        state.append(state[-1])  # Account for the first <eos> token
+        # Important to include the states for "" and "<bos>"
+        # since there's causal masking!
+        state = [False]
+        for i in range(len(string)+1):
+            state.append(self.grammar_check(string[:i]))
         return state
 
+    def parse_depth_generator(self, string):
+        # Uses parsimonious to use parse tree and return tree depth at every token
+        try:
+            tree = self.grammar.parse(string)
+            depth = [0] * (len(string) + 1)
+            for node in tree.children:
+                if node.expr_name == "S":
+                    for i in range(node.start, node.end + 1):
+                        depth[i] += 1
+            return depth
+        except (IncompleteParseError, ParseError):
+            return [0] * (len(string) + 1)

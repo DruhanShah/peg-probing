@@ -88,13 +88,13 @@ def train_model(cfg, model, dataloader):
 
             if it_compare(it, cfg.log.train_interval):
                 lr = optimizer.param_groups[0]["lr"]
-                train_loss = log_train(it, cfg.deploy, lr, train_loss)
+                train_loss = log_train(cfg.deploy, lr, train_loss)
             if it_compare(it, cfg.log.eval_interval):
                 model.eval()
                 val_results, debug_info = validation(cfg, model, device)
                 if cfg.log.debug:
                     log_debug(it, FP, debug_info)
-                val_results = log_eval(it, cfg.deploy, val_results)
+                val_results = log_eval(cfg.deploy, val_results)
                 model.train()
             if it_compare(it, cfg.log.save_interval):
                 save_model(cfg, model, optimizer, it)
