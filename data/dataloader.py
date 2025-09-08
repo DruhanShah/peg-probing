@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader, RandomSampler
 from omegaconf import OmegaConf
 
 from .train_dataset import create_train_dataset
-from .probe_dataset import PSDataset
+from .probe_dataset import create_probe_dataset
 
 
 def get_dataloader(lang, task, cfg, work_dir, seed=42, kind="PEG", quiet=False):
@@ -13,9 +13,10 @@ def get_dataloader(lang, task, cfg, work_dir, seed=42, kind="PEG", quiet=False):
                                        **OmegaConf.to_object(cfg),
                                        seed=seed)
     elif kind == "PS":
-        dataset = PSDataset(language=lang,
-                            **OmegaConf.to_object(cfg),
-                            seed=seed)
+        dataset = create_probe_dataset(type=task,
+                                       language=lang,
+                                       **OmegaConf.to_object(cfg),
+                                       seed=seed)
 
     if cfg.precomp:
         dataset.load_data(work_dir)

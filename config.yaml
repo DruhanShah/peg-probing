@@ -1,43 +1,16 @@
-deploy: True
+# @package _global_
+deploy: False
 project_name: "peg-probing"
 seed: 42
-
 lang: "dyck-2"
 work_dir: "../Aux"
-device : "cpu"
-model_type: "recognizer"
-probe_type: "parse_state"
+device: "cpu"
 
-data:
-  max_len: 30
-  num_iters: 64000
-  batch_size: 32
-  precomp: True
-  save_dir: "data"
-  num_workers: 0
-  pos_ratio: 0.5
-
-eval:
-  max_len: 30
-  num_iters: 50
-  batch_size: 1
-  precomp: False
-  save_dir: "data"
-  num_workers: 0
-  pos_ratio: 0.6
-  temperature: 0.5
-
-parse:
-  max_len: 30
-  num_iters: 2000
-  batch_size: 1
-  precomp: False
-  save_dir: "data"
-  num_workers: 0
-  pos_ratio: 1.0
-  temperature: 0.5
+experiment:
+  task: "train_model"
 
 model:
+  type: "generator"
   n_l: 2
   d_m: 128
   n_h: 4
@@ -49,17 +22,28 @@ model:
   act_cache: True
   checkpoint: 10000
 
-train:
-  bf16: True
-  epochs: 5
+data:
+  max_len: 30
+  num_iters: 64000
+  batch_size: 32
+  precomp: True
+  num_workers: 0
+  pos_ratio: 0.5
 
 probe:
+  type: "parse_state"
   d_mlp: 512
   linear: True
   checkpoint: 1800
 
+eval:
+  batch_size: 1
+  num_samples: 50
+  temperature: 0.5
+
 optim:
   optimizer: "adamw"
+  learning_rate: 1e-3
   weight_decay: 1e-5
   momentum: 0.9
   beta1: 0.9
@@ -70,30 +54,14 @@ optim:
   scheduler: "cosine"
   warmup_steps: 0
   restart_steps: 5000
-  decay_factor: 5e-4
-  learning_rate: 1e-3
   min_lr: 1e-4
 
-log: 
-  save_multiple: True
+log:
   train_interval: 50
   eval_interval: 50
   save_interval: 1000
   debug: False
-  free: False
-
-
-defaults:
-  - override hydra/job_logging: disabled
-  - override hydra/hydra_logging: disabled
 
 hydra:
-  output_subdir: Null
-  job:
-    chdir: False
   run:
     dir: .
-
-  sweep:
-    dir: .
-    subdir: .

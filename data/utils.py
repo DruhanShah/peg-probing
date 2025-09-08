@@ -1,7 +1,47 @@
 import random
+from parsimonious import Grammar, NodeVisitor
 
 LEAF = 0
 BRANCH = 1
+
+
+class DepthCalculator(NodeVisitor):
+    def __init__(self, grammar):
+        self.grammar = grammar
+        self.current_depth = 0
+        self.depths = []
+
+    def get_depths(self, string):
+        self.depths = [0] * len(string)
+        self.current_depth = 0
+        tree = self.grammar.parse(string)
+        self.visit(tree)
+        return self.depths
+
+    def generic_visit(self, node, visited_children):
+        # Calculate depth for this node's text span
+        start_pos = node.start
+        end_pos = node.end
+
+        # Only process nodes that actually consume text
+        if start_pos < end_pos:
+            # Update depths for all characters covered by this node
+            for i in range(start_pos, end_pos):
+                self.depths[i] = max(self.depths[i], self.current_depth)
+
+        # Recursively visit children with increased depth
+        start = hasattr(node.expr, "name") and node.expr_name == "S"
+        self.current_depth += 1 if start else 0
+        result = []
+        for child in node:
+            if hasattr(child, 'start'):
+                result.append(self.visit(child))
+            else:
+                result.append(child)
+        self.current_depth -= 1 if start else 0
+
+        return result
+
 
 class ExprNode:
 

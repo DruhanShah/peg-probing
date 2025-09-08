@@ -1,37 +1,42 @@
 import random
-from itertools import cycle
 from parsimonious.grammar import Grammar
 from parsimonious.exceptions import IncompleteParseError, ParseError
 
-from data.strings import gen_triple, gen_star, gen_dyck_1, gen_dyck_2, gen_expr
+from data.utils import gen_star, gen_dyck_1, gen_dyck_2, gen_expr
+from data.utils import DepthCalculator
 
 
 GRAMMAR = {
     "star": """
-        S = ~"a*b*"
+        S = A B
+        A = a*
+        B = b*
+        a = "a"
+        b = "b"
         """,
     "dyck-1": """
-        S = "(" T ")" T
-        T = S / ""
+        S = T* / ""
+        T = A
+        A = "(" S ")"
         """,
     "dyck-2": """
-        S = A / B
-        A = "(" T ")" T
-        B = "[" T "]" T
-        T = S / ""
+        S = T* / ""
+        T = A / B
+        A = "(" S ")"
+        B = "[" S "]"
         """,
     "dyck-3": """
-        S = A / B / C
-        A = "(" T ")" T
-        B = "[" T "]" T
-        C = "{" T "}" T
-        T = S / ""
+        S = T* / ""
+        T = A / B / C
+        A = "(" S ")"
+        B = "[" S "]"
+        C = "{" S "}"
         """,
     "expr": """
         S = E / D
         E = O S S
-        O = ~"[+*^]"
-        D = ~"[0-9]"
+        O = "^" / "+" / "*"
+        D = "0" / "1" / "2" / "3" / "4" / "5" / "6" / "7" / "8" / "9"
     """,
 }
 
@@ -73,6 +78,8 @@ class PEG:
             self.valid_lengths = list(range(1, self.max_length+1, 2))
         self.length_weights = [(i+1) for i in range(len(self.valid_lengths))]
 
+        self.depth_calculator = DepthCalculator(self.grammar)
+
     def tokenize_string(self, string):
         tokens = ["<bos>"] + list(string) + ["<eos>"]
         token_indices = [self.stoi[token] for token in tokens]
@@ -100,7 +107,7 @@ class PEG:
 
     def positive_generator(self, length):
         if length not in self.valid_lengths:
-            raise ValueError(f"Invalid string length for {self.language}: {length}")
+            raise ValueError(f"Invalid length for {self.language}: {length}")
 
         langfunc = FUNCS[self.language]
 
@@ -112,13 +119,13 @@ class PEG:
     def negative_generator(self, length):
         alphabet = [i for i in self.alphabet if i not in SPECIAL_TOKENS]
         negative_string = ''.join(random.choices(alphabet, k=length))
-        
+
         while self.grammar_check(negative_string):
             idx = random.randint(0, len(negative_string) - 1)
-            negative_string = (negative_string[:idx] + 
-                                random.choice(alphabet) + 
-                                negative_string[idx+1:])
-        
+            negative_string = (negative_string[:idx] +
+                               random.choice(alphabet) +
+                               negative_string[idx+1:])
+
         assert not self.grammar_check(negative_string), \
             f"Generated negative string is valid: {negative_string}"
         return negative_string
@@ -132,14 +139,7 @@ class PEG:
         return state
 
     def parse_depth_generator(self, string):
-        # Uses parsimonious to use parse tree and return tree depth at every token
-        try:
-            tree = self.grammar.parse(string)
-            depth = [0] * (len(string) + 1)
-            for node in tree.children:
-                if node.expr_name == "S":
-                    for i in range(node.start, node.end + 1):
-                        depth[i] += 1
-            return depth
-        except (IncompleteParseError, ParseError):
-            return [0] * (len(string) + 1)
+        # Important to include the states for "" and "<bos>"
+        # since there's causal masking!
+        depths = self.depth_calculator.get_depths(string)
+        return [0, 0] + depths

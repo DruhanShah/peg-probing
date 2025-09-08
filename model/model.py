@@ -7,7 +7,7 @@ from copy import deepcopy as copy
 from abc import ABC, abstractmethod
 from functools import partial
 
-from .components import TransformerConfig, Block
+from .components import Block
 
 
 class BaseModel(nn.Module, ABC):
@@ -107,11 +107,12 @@ class BaseModel(nn.Module, ABC):
         position_ids = torch.arange(0, N, dtype=torch.long, device=self.cfg.device)
         pos_embeds = self.pos_embeddings(position_ids).to(self.cfg.dtype)
         pos_embeds = einops.repeat(pos_embeds, "n d -> b n d", b=B)
-
         x = token_embeds + pos_embeds
+
         for block in self.transformer:
             x = block(x)
         x = self.ln_final(x)
+
         x = self._pool(x)
         logits = self.head(x)
 

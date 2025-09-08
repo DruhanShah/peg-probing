@@ -5,20 +5,14 @@ This is the repository containing all relevant code for the project "Parse Probi
 
 * Running the code
 
-For running this code on the =ada.iiit.ac.in= remote server, use =ada_wrapper.sh= as a python executable, since it manages the locations of data, models and auxiliary logs in the scratch and share directories on Ada.
+All experiments can be run through =main.py=. The behavior is controlled by the =config.yaml= file.
 
 #+begin_src bash
-  python3 train_model.py # On local system
-  ./ada_wrapper train_model.py # On Ada
+python main.py
 #+end_src
 
-For running on a local system, ensure the =device= and the =work_dir= parameters in the config file are set accordingly.
+The task run by =main.py= will be determined by the =experiment.task= property in the config file. The possible values for this are:
 
-** Data generation
-
-The main data for training is generated in =.pkl= files by running =generate_data.py= as mentioned above.
-
-** Model training
-
-The classifier model for the specific language is trained by running =train_model.py=. This will *not*
- work if the corresponding training data is missing!
+- To train a model: :: =train_model=
+- To train a probe: :: =train_probe=
+- To run an intervention: :: =run_intervention=
