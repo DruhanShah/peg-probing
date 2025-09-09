@@ -33,7 +33,7 @@ def train_model(cfg, device):
     dataloader = get_dataloader(cfg.lang,
                                 cfg.model.type, cfg.data,
                                 cfg.work_dir, cfg.seed,
-                                kind="PEG")
+                                kind="model")
     model_config = TransformerConfig(
         **OmegaConf.to_object(cfg.model),
         d_vocab=dataloader.dataset.PEG.vocab_size,
@@ -64,7 +64,7 @@ def train_probe(cfg, device):
 
     dataloader = get_dataloader(cfg.lang,
                                 cfg.probe.type, cfg.data,
-                                cfg.work_dir, cfg.seed, kind="PS")
+                                cfg.work_dir, cfg.seed, kind="probe")
     evaluator = Evaluator(cfg, device, probe=probe)
     trainer = Trainer(probe, dataloader, evaluator, cfg, device, model=model)
     trainer.train_probe()

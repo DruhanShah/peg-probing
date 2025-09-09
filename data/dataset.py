@@ -333,3 +333,18 @@ class TokenCategoryDataset(ProbeDataset):
 
     def _generate_label(self, sequence):
         return self.PEG.token_category_generator(sequence, self.category)
+
+
+# This is what this module will expose
+
+DATASETS = {
+    "model": {
+        "generator": GeneratorDataset,
+        "recognizer": RecognizerDataset,
+    },
+    "probe": {
+        "parse_state": ParseStateDataset,
+        "parse_depth": ParseDepthDataset,
+        "token_category": TokenCategoryDataset,
+    }
+}

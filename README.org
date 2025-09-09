@@ -15,4 +15,4 @@ The task run by =main.py= will be determined by the =experiment.task= property i
 
 - To train a model: :: =train_model=
 - To train a probe: :: =train_probe=
-- To run an intervention: :: =run_intervention=
+- To run an intervention: :: =run_intervention= (Not implemented yet)

@@ -12,11 +12,8 @@ from .utils import gen_triple, gen_star, gen_dyck_1, gen_dyck_2, gen_expr
 
 __all__ = [
     "PEG",
-    "RecognizerDataset",
-    "GeneratorDataset",
-    "ParseStateDataset",
-    "ParseDepthDataset",
-    "TokenCategoryDataset",
+    "TRAIN_DATASETS",
+    "PROBE_DATASETS",
     "get_dataloader",
     "gen_triple",
     "gen_star",

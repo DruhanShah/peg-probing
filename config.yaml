@@ -10,7 +10,7 @@ experiment:
   task: "train_model"
 
 model:
-  type: "generator"
+  type: "recognizer"
   n_l: 2
   d_m: 128
   n_h: 4
@@ -27,6 +27,14 @@ data:
   num_iters: 64000
   batch_size: 32
   precomp: True
+  num_workers: 0
+  pos_ratio: 0.5
+
+shenanigans:
+  max_len: 30
+  num_iters: 5
+  batch_size: 1
+  precomp: False
   num_workers: 0
   pos_ratio: 0.5
 

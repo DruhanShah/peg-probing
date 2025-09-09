@@ -12,7 +12,7 @@ from .components import Block
 
 class BaseModel(nn.Module, ABC):
     """Abstract base class for transformer models with activation caching."""
-    
+
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
@@ -22,13 +22,13 @@ class BaseModel(nn.Module, ABC):
         self.transformer = nn.ModuleList([Block(cfg)
                                           for _ in range(cfg.n_l)])
         self.ln_final = nn.LayerNorm(cfg.d_m, dtype=cfg.dtype, bias=cfg.bias)
-        
+
         # Model-specific layers and loss (to be implemented by subclasses)
         self.head = self._init_model_head()
         self.loss = self._init_model_loss()
-        
+
         self.to(cfg.device, dtype=cfg.dtype)
-        
+
         # Activation caching
         self.activation_cache = {}
         self._hook_handles = []
@@ -100,16 +100,20 @@ class BaseModel(nn.Module, ABC):
         if self.cfg.act_cache:
             self.reset_cache()
             self._register_hooks()
-        
+
         B, N = x.shape
 
         token_embeds = self.token_embeddings(x.to(torch.long))
-        position_ids = torch.arange(0, N, dtype=torch.long, device=self.cfg.device)
+        position_ids = torch.arange(0, N,
+                                    dtype=torch.long, device=self.cfg.device)
         pos_embeds = self.pos_embeddings(position_ids).to(self.cfg.dtype)
         pos_embeds = einops.repeat(pos_embeds, "n d -> b n d", b=B)
         x = token_embeds + pos_embeds
 
-        for block in self.transformer:
+        for i, block in enumerate(self.transformer):
+            if self.cfg.act_cache:
+                key = f"block_{i}.attn_map"
+                self.activation_cache[key] = block.get_attention(x)
             x = block(x)
         x = self.ln_final(x)
 
@@ -121,8 +125,8 @@ class BaseModel(nn.Module, ABC):
             returnable["logits"] = logits
         if "loss" in return_type:
             returnable["loss"] = (self._compute_loss(logits, y)
-                    if y is not None
-                    else None)
+                                  if y is not None
+                                  else None)
         if "cache" in return_type:
             returnable["cache"] = (self.activation_cache
                                    if self.cfg.act_cache
@@ -153,7 +157,7 @@ class BaseModel(nn.Module, ABC):
 
 class RecognizerModel(BaseModel):
     """Binary classification model."""
-    
+
     def _init_model_head(self):
         return nn.Linear(self.cfg.d_m, 1, dtype=self.cfg.dtype)
 
@@ -171,7 +175,7 @@ class RecognizerModel(BaseModel):
 
 class GeneratorModel(BaseModel):
     """Generative language model."""
-    
+
     def _init_model_head(self):
         return nn.Linear(self.cfg.d_m, self.cfg.d_vocab, dtype=self.cfg.dtype)
 
@@ -206,12 +210,3 @@ class GeneratorModel(BaseModel):
 
         self.train()
         return generated
-
-
-def create_model(model_type, cfg):
-    if model_type == "recognizer":
-        return RecognizerModel(cfg)
-    elif model_type == "generator":
-        return GeneratorModel(cfg)
-    else:
-        raise ValueError(f"Unknown model type: {model_type}. Supported types are 'recognizer' and 'generator'.")

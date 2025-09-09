@@ -5,6 +5,7 @@ import wandb
 import numpy as np
 import random
 from omegaconf import OmegaConf
+from matplotlib import pyplot as plt
 
 
 def open_log(cfg):
@@ -33,8 +34,8 @@ def sanity_checks(cfg, max_len):
     Basic sanity checks for model configuration and data compatibility
     """
 
-    assert(cfg.model.n_ctx >= max_len)
-    assert(cfg.model.d_m % cfg.model.d_h == 0)
+    assert cfg.model.n_ctx >= max_len
+    assert cfg.model.d_m % cfg.model.d_h == 0
 
     if not torch.cuda.is_available():
         warnings.warn("WARNING: running on CPU", UserWarning)
@@ -69,3 +70,29 @@ def init_wandb(cfg, tags=None):
         wandb.run.save()
         wandb.config.update(OmegaConf.to_container(cfg))
 
+
+def visualise(tensor, title="Heatmap", string=""):
+    """
+    Visualise an attention map's different heads
+    """
+    H, N = tensor.shape[0], tensor.shape[1]
+    string = "<" + string + ">"
+
+    fig, axes = plt.subplots(1, H, figsize=(H * 4, 4))
+    fig.suptitle(title + " with input " + string, fontsize=16)
+    if H == 1:
+        axes = [axes]
+
+    for i, ax in enumerate(axes):
+        if string:
+            ticks = np.arange(N)
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(list(string))
+            ax.set_yticks(ticks)
+            ax.set_yticklabels(list(string))
+        else:
+            ax.axis('off')
+        ax.imshow(tensor[i], cmap='hot')
+        ax.set_title(f"Submatrix {i}")
+
+    plt.show()

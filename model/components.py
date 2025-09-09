@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 @dataclass
 class TransformerConfig:
+    type: str = "generator"
     n_l: int = 6
     d_m: int = 512
     n_h: int = 8
@@ -33,9 +34,9 @@ class TransformerConfig:
         self.d_mlp = self.d_mlp if self.d_mlp is not None else 4 * self.d_m
 
         if self.attn_dir not in ["bidirectional", "causal"]:
-            raise ValueError(f"Unsupported attention direction: {self.attn_dir}")
+            raise ValueError(f"Unsupported attention: {self.attn_dir}")
         if self.d_h * self.n_h != self.d_m:
-            raise ValueError("d_m must be divisible by n_h for multi-head attention.")
+            raise ValueError("n_h must divide d_m for multi-head attention.")
 
 
 @dataclass
@@ -59,8 +60,9 @@ class Attention(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.W_QKV = nn.Linear(cfg.d_m, 3 * cfg.d_m, bias=cfg.bias, dtype=cfg.dtype)
-        self.W_O = nn.Linear(cfg.d_m, cfg.d_m, bias=cfg.bias, dtype=cfg.dtype)
+        d = cfg.d_m
+        self.W_QKV = nn.Linear(d, 3*d, bias=cfg.bias, dtype=cfg.dtype)
+        self.W_O = nn.Linear(d, d, bias=cfg.bias, dtype=cfg.dtype)
 
     def forward(self, x):
 
@@ -77,6 +79,23 @@ class Attention(nn.Module):
         output = einops.rearrange(attention, "b h s d -> b s (h d)")
         output = self.W_O(output)
         return output
+
+    def get_attention(self, x):
+        q, k, v = self.W_QKV(x).split(self.cfg.d_m, dim=2)
+        q = einops.rearrange(q, "b s (h d) -> b h s d", h=self.cfg.n_h)
+        k = einops.rearrange(k, "b s (h d) -> b h s d", h=self.cfg.n_h)
+        v = einops.rearrange(v, "b s (h d) -> b h s d", h=self.cfg.n_h)
+
+        mask = torch.zeros((x.size(1), x.size(1)), device=x.device).bool()
+        if self.cfg.attn_dir == "causal":
+            mask = torch.triu(torch.ones((x.size(1), x.size(1)),
+                                         device=x.device), diagonal=1).bool()
+            mask = einops.repeat(mask, "s t -> b h s t", b=1, h=self.cfg.n_h)
+        attention = einops.einsum(q, k, "b h s d, b h t d -> b h s t")
+        attention = attention / (self.cfg.d_h ** 0.5)
+        attention = attention.masked_fill(mask, float('-inf'))
+        attention = F.softmax(attention, dim=-1)
+        return attention
 
 
 class MLP(nn.Module):
@@ -110,3 +129,6 @@ class Block(nn.Module):
         x = x + self.attn(self.ln1(x))
         x = x + self.mlp(self.ln2(x))
         return x
+
+    def get_attention(self, x):
+        return self.attn.get_attention(self.ln1(x))
