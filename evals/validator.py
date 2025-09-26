@@ -21,45 +21,10 @@ class Validator:
                                   dtype=self.dt)
 
     def validate_model(self, model):
-        if self.cfg.model.type == "recognizer":
-            return self._binary_validation(model)
-        elif self.cfg.model.type == "generator":
-            return self._grammaticality_validation(model)
+        return self._grammaticality_validation(model)
 
     def validate_probe(self, model, probe):
         return self._probe_validation(model, probe)
-
-    def _binary_validation(self, model):
-        dataloader = get_dataloader(
-            self.cfg.lang, self.cfg.model_type,
-            self.cfg.eval,
-            self.cfg.work_dir, self.cfg.seed,
-            kind="PEG", quiet=True
-        )
-
-        results = {"loss": [], "accuracy": []}
-        debug_results = {"outputs": []}
-
-        with torch.no_grad():
-            for i, _in in enumerate(dataloader):
-                inputs = _in["inputs"].to(self.device)
-                outputs = _in["outputs"].to(self.device)
-
-                with self._get_autocast_context(self.device):
-                    # Forward pass through the model
-                    _out = model(inputs, outputs,
-                                 return_type=["logits", "loss"])
-                    logits = _out["logits"].to(self.device)
-                    loss = _out["loss"].mean().item()
-
-                    # Get predictions and accuracy
-                    pred = logits > 0
-                    acc = self._calculate_binary_accuracy(pred, outputs)
-
-                results["loss"].append(loss)
-                results["accuracy"].append(acc)
-
-        return results, debug_results
 
     def _grammaticality_validation(self, model):
         grammar = PEG(self.cfg.lang, max_length=self.cfg.eval.max_len)

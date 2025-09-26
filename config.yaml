@@ -6,11 +6,9 @@ lang: "dyck-2"
 work_dir: "../Aux"
 device: "cpu"
 
-experiment:
-  task: "train_model"
+task: "train_model"
 
 model:
-  type: "recognizer"
   n_l: 2
   d_m: 128
   n_h: 4
@@ -43,6 +41,10 @@ probe:
   d_mlp: 512
   linear: True
   checkpoint: 1800
+
+train:
+  epochs: 5
+  bf16: True
 
 eval:
   batch_size: 1

@@ -29,9 +29,9 @@ class PEGDataset(Dataset, ABC):
     def generate_data(self, quiet=False):
         pass
 
-    def load_data(self, path_to_results, dataset_type):
-        base_dir = os.path.join(path_to_results,
-                                "data", dataset_type, self.language)
+    def load_data(self, work_dir, model_type):
+        base_dir = os.path.join(work_dir, "data",
+                                model_type, self.language)
         data_path = os.path.join(base_dir, "dataset.pkl")
 
         with open(data_path, "rb") as f:
@@ -42,93 +42,6 @@ class PEGDataset(Dataset, ABC):
 
     def __len__(self):
         return len(self.data) if self._generated else self.num_iters
-
-
-class RecognizerDataset(PEGDataset):
-    """Dataset for training binary classifiers on formal languages."""
-
-    def __init__(self,
-                 language,
-                 num_iters,
-                 max_len,
-                 seed=42,
-                 pos_ratio=0.5,
-                 **kwargs):
-        super().__init__(language, num_iters, max_len, seed, **kwargs)
-        self.pos_ratio = pos_ratio
-        self._is_binary = True
-
-    def generate_data(self, quiet=False):
-        if self._generated:
-            return
-
-        num_positive = int(self.num_iters * self.pos_ratio)
-        num_negative = self.num_iters - num_positive
-
-        # Generate positive samples
-        for _ in tqdm(range(num_positive),
-                      desc="Generating positive samples",
-                      disable=quiet):
-            target_length = random.choices(
-                self.PEG.valid_lengths,
-                weights=self.PEG.length_weights,
-            )[0]
-            sequence = self.PEG.positive_generator(target_length)
-            self.data.append(sequence)
-            self.labels.append(1)
-
-        # Generate negative samples
-        for _ in tqdm(range(num_negative),
-                      desc="Generating negative samples",
-                      disable=quiet):
-            target_length = random.randint(2, self.max_len)
-            sequence = self.PEG.negative_generator(target_length)
-            self.data.append(sequence)
-            self.labels.append(0)
-
-        # Shuffle the combined data
-        combined = list(zip(self.data, self.labels))
-        random.shuffle(combined)
-        self.data, self.labels = zip(*combined)
-        self.data = list(self.data)
-        self.labels = list(self.labels)
-
-        self._generated = True
-
-    def __getitem__(self, index):
-        if not self._generated:
-            raise RuntimeError("Data not generated. "
-                               "Call generate_data() first.")
-
-        sequence = self.data[index]
-        label = self.labels[index]
-
-        sequence_tokens = torch.tensor(
-            self.PEG.tokenize_string(sequence),
-            dtype=torch.long
-        )
-        label_tensor = torch.tensor(label, dtype=torch.float32)
-
-        return sequence_tokens, label_tensor
-
-    def collate_fn(self, batch):
-        sequences, labels = zip(*batch)
-        max_len = max(len(seq) for seq in sequences)
-
-        padded_sequences = []
-
-        for seq in sequences:
-            padded_seq = torch.cat([
-                seq,
-                torch.full((max_len - len(seq),), self.pad_token_id,
-                           dtype=torch.long)
-            ])
-            padded_sequences.append(padded_seq)
-
-        return {
-            'inputs': torch.stack(padded_sequences),
-            'outputs': torch.stack(list(labels)),
-        }
 
 
 class GeneratorDataset(PEGDataset):
@@ -242,6 +155,7 @@ class GeneratorDataset(PEGDataset):
 
 
 class ProbeDataset(PEGDataset):
+
     def generate_data(self, quiet=False):
         if self._generated:
             return
@@ -317,16 +231,19 @@ class ProbeDataset(PEGDataset):
 
 
 class ParseStateDataset(ProbeDataset):
+
     def _generate_label(self, sequence):
         return self.PEG.parse_state_generator(sequence)
 
 
 class ParseDepthDataset(ProbeDataset):
+
     def _generate_label(self, sequence):
         return self.PEG.parse_depth_generator(sequence)
 
 
 class TokenCategoryDataset(ProbeDataset):
+
     def __init__(self, category=None, **kwargs):
         super().__init__(**kwargs)
         self.category = category
@@ -340,7 +257,6 @@ class TokenCategoryDataset(ProbeDataset):
 DATASETS = {
     "model": {
         "generator": GeneratorDataset,
-        "recognizer": RecognizerDataset,
     },
     "probe": {
         "parse_state": ParseStateDataset,

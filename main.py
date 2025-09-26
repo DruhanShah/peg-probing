@@ -3,9 +3,12 @@ from omegaconf import OmegaConf
 import torch
 
 from data.dataloader import get_dataloader
-from model import TransformerConfig, create_model, ProbeConfig, Probe
+from model import (
+    ModelConfig, GeneratorModel,
+    ProbeConfig, Probe
+)
 from trainer.trainer import Trainer
-from evals.evaluator import Evaluator
+from evals.validator import Validator
 
 from utils import init_wandb, set_seed, open_log, cleanup
 
@@ -17,42 +20,42 @@ def main(cfg):
     fp = open_log(cfg)
     device = cfg.device if torch.cuda.is_available() else "cpu"
 
-    if cfg.experiment.task == "train_model":
+    if cfg.task == "train_model":
         train_model(cfg, device)
-    elif cfg.experiment.task == "train_probe":
+    elif cfg.task == "train_probe":
         train_probe(cfg, device)
-    elif cfg.experiment.task == "run_intervention":
+    elif cfg.task == "run_intervention":
         run_intervention(cfg, device)
     else:
-        raise ValueError(f"Unknown task: {cfg.experiment.task}")
+        raise ValueError(f"Unknown task: {cfg.task}")
 
     cleanup(cfg, fp)
 
 
 def train_model(cfg, device):
     dataloader = get_dataloader(cfg.lang,
-                                cfg.model.type, cfg.data,
+                                "generator", cfg.data,
                                 cfg.work_dir, cfg.seed,
                                 kind="model")
-    model_config = TransformerConfig(
+    model_config = ModelConfig(
         **OmegaConf.to_object(cfg.model),
         d_vocab=dataloader.dataset.PEG.vocab_size,
         pad_index=dataloader.dataset.pad_token_id,
         seed=cfg.seed,
     )
-    model = create_model(cfg.model.type, model_config)
-    evaluator = Evaluator(cfg, device)
+    model = GeneratorModel(model_config)
+    evaluator = Validator(cfg, device)
     trainer = Trainer(model, dataloader, evaluator, cfg, device)
     trainer.train()
 
 
 def train_probe(cfg, device):
-    model_path = (f"{cfg.work_dir}/models/{cfg.model.type}/"
+    model_path = (f"{cfg.work_dir}/models/generator/"
                   f"{cfg.lang}/ckpt_{cfg.model.checkpoint}.pt")
     model_state = torch.load(model_path, map_location=device)
     model_config = model_state["config"]
     model_config.act_cache = True
-    model = create_model(cfg.model.type, model_config)
+    model = GeneratorModel(model_config)
     model.load_state_dict(model_state["net"])
     model.eval()
 
@@ -65,7 +68,7 @@ def train_probe(cfg, device):
     dataloader = get_dataloader(cfg.lang,
                                 cfg.probe.type, cfg.data,
                                 cfg.work_dir, cfg.seed, kind="probe")
-    evaluator = Evaluator(cfg, device, probe=probe)
+    evaluator = Validator(cfg, device, probe=probe)
     trainer = Trainer(probe, dataloader, evaluator, cfg, device, model=model)
     trainer.train_probe()
 

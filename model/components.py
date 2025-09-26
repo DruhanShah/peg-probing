@@ -8,7 +8,7 @@ from dataclasses import dataclass
 # Configuration dataclasses
 
 @dataclass
-class TransformerConfig:
+class ModelConfig:
     type: str = "generator"
     n_l: int = 6
     d_m: int = 512

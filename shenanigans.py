@@ -2,7 +2,7 @@ import hydra
 import torch
 
 from data import get_dataloader
-from model import RecognizerModel, GeneratorModel
+from model import GeneratorModel
 
 from utils import init_wandb, set_seed, open_log, cleanup, visualise
 
@@ -27,13 +27,11 @@ def main(cfg):
     )
 
     # Load the main model
-    model_path = (f"{cfg.work_dir}/models/{cfg.model.type}/"
+    model_path = (f"{cfg.work_dir}/models/generator/"
                   f"{cfg.lang}/ckpt_{cfg.model.checkpoint}.pt")
     model_state = torch.load(model_path, weights_only=False)
     model_state["config"].act_cache = cfg.model.act_cache
-    model = (RecognizerModel(model_state["config"])
-             if cfg.model.type == "recognizer"
-             else GeneratorModel(model_state["config"]))
+    model = GeneratorModel(model_state["config"])
     model.load_state_dict(model_state["net"])
 
     for batch in dataloader:

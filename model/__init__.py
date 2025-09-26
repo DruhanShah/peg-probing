@@ -1,10 +1,10 @@
-from .components import TransformerConfig, ProbeConfig
-from .model import RecognizerModel, GeneratorModel
+from .components import ModelConfig, ProbeConfig
+from .model import Model
 from .probe import Probe
 
 
 __all__ = [
     "TransformerConfig", "ProbeConfig",
-    "RecognizerModel", "GeneratorModel",
+    "Model",
     "Probe",
 ]

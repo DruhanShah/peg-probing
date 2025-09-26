@@ -10,7 +10,7 @@ def get_dataloader(lang, task, cfg, work_dir,
     dataset = DATASETS[kind][task](lang, **OmegaConf.to_object(cfg), seed=seed)
 
     if cfg.precomp:
-        dataset.load_data(work_dir)
+        dataset.load_data(work_dir, task)
     else:
         dataset.generate_data(quiet=quiet)
 

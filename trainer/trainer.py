@@ -27,7 +27,7 @@ class Trainer:
         train_loss = {"loss": []}
         it = 0
 
-        for e in range(self.cfg.experiment.epochs):
+        for e in range(self.cfg.train.epochs):
             for _in in tqdm(self.dataloader, desc=f"Epoch {e+1}"):
                 it += 1
                 inputs, outputs = (_in["inputs"].to(self.device),
@@ -70,7 +70,7 @@ class Trainer:
         train_loss = {"loss": []}
         it = 0
 
-        for e in range(self.cfg.experiment.epochs):
+        for e in range(self.cfg.train.epochs):
             for _in in tqdm(self.dataloader, desc=f"Epoch {e+1}"):
                 it += 1
                 seqs = _in["inputs"].to(self.device)

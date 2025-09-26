@@ -2,8 +2,8 @@ import random
 from parsimonious.grammar import Grammar
 from parsimonious.exceptions import IncompleteParseError, ParseError
 
-from data.utils import gen_star, gen_dyck_1, gen_dyck_2, gen_expr
-from data.utils import DepthCalculator
+from .utils import gen_star, gen_dyck_1, gen_dyck_2, gen_expr
+from .utils import DepthCalculator
 
 
 GRAMMAR = {

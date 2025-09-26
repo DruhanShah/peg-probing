@@ -1,6 +1,6 @@
 import hydra
 
-from data import create_train_dataset
+from data import DATASETS
 from utils import init_wandb, set_seed, cleanup
 from utils import save_data
 from utils import open_log, log_gen
@@ -12,10 +12,9 @@ def main(cfg):
     set_seed(cfg.seed)
     fp = open_log(cfg)
 
-    dataset = create_train_dataset(
-        type=cfg.model_type,
+    Dataset = DATASETS["model"][cfg.model.type]
+    dataset = Dataset(
         language=cfg.lang,
-        precomp=cfg.data.precomp,
         num_samples=cfg.data.num_samples,
         max_len=cfg.data.max_len,
         pos_ratio=cfg.data.pos_ratio,
